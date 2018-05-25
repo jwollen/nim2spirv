@@ -58,26 +58,26 @@ magic options:
   --nlvm.target=wasm32 cross-compile to WebAssembly
 """
   else:
-    # Main nim compiler has some reaons for two-pass parsing
-    service.processCmdLine(passCmd1, "", config)
-
-    # Use project name like main nim compiler
-    # TODO upstream to common location...
-    if options.gProjectName == "-":
-      options.gProjectName = "stdinfile"
-      options.gProjectFull = "stdinfile"
-      options.gProjectPath = os.getCurrentDir()
-      options.gProjectIsStdin = true
-    elif options.gProjectName != "":
+  # Process command line arguments:
+    processCmdLine(passCmd1, "", config)
+    if gProjectName == "-":
+      gProjectName = "stdinfile"
+      gProjectFull = "stdinfile"
+      gProjectPath = canonicalizePath getCurrentDir()
+      gProjectIsStdin = true
+    elif gProjectName != "":
       try:
-        options.gProjectFull = canonicalizePath(options.gProjectName)
+        gProjectFull = canonicalizePath(gProjectName)
       except OSError:
-        options.gProjectFull = options.gProjectName
-      let p = splitFile(options.gProjectFull)
-      options.gProjectPath = p.dir
-      options.gProjectName = p.name
+        gProjectFull = gProjectName
+      let p = splitFile(gProjectFull)
+      let dir = if p.dir.len > 0: p.dir else: getCurrentDir()
+      gProjectPath = canonicalizePath dir
+      gProjectName = p.name
     else:
-      gProjectPath = os.getCurrentDir()
+      gProjectPath = canonicalizePath getCurrentDir()
+
+    echo gProjectPath
 
     nimconf.loadConfigs(DefaultConfig)
     service.processCmdLine(passCmd2, "", config)
