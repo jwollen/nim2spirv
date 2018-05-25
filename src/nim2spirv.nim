@@ -82,8 +82,8 @@ magic options:
     nimconf.loadConfigs(DefaultConfig)
     service.processCmdLine(passCmd2, "", config)
 
-    #gSelectedGC = gcMarkAndSweep
-    #defineSymbol("gcmarkandsweep")
+    gSelectedGC = gcNone
+    defineSymbol("nogc")
 
     # default signal handler does memory allocations and all kinds of
     # disallowed-in-signal-handler-stuff
