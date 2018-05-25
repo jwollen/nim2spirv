@@ -1,0 +1,27 @@
+*
+!**/
+!*.*
+
+# Cache
+nimcache/
+rnimcache/
+dnimcache/
+
+*.o
+!/icons/*.o
+*.obj
+*.ilk
+*.pdb
+*.dll
+*.exe
+*.so
+*.dylib
+*.zip
+*.iss
+*.log
+
+bin/*
+
+# Private directories and files (IDEs)
+.*/
+~*
