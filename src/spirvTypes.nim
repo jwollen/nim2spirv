@@ -13,7 +13,6 @@ type
     SpvSourceLanguageOpenCLC = 3
     SpvSourceLanguageOpenCLCPP = 4
     SpvSourceLanguageHLSL = 5
-    SpvSourceLanguageMax = 2147483647
 
   SpvExecutionModel* {.size: sizeof(uint32).} = enum
     SpvExecutionModelVertex = 0
@@ -23,19 +22,16 @@ type
     SpvExecutionModelFragment = 4
     SpvExecutionModelGLCompute = 5
     SpvExecutionModelKernel = 6
-    SpvExecutionModelMax = 2147483647
 
   SpvAddressingModel* {.size: sizeof(uint32).} = enum
     SpvAddressingModelLogical = 0
     SpvAddressingModelPhysical32 = 1
     SpvAddressingModelPhysical64 = 2
-    SpvAddressingModelMax = 2147483647
 
   SpvMemoryModel* {.size: sizeof(uint32).} = enum
     SpvMemoryModelSimple = 0
     SpvMemoryModelGLSL450 = 1
     SpvMemoryModelOpenCL = 2
-    SpvMemoryModelMax = 2147483647
 
   SpvExecutionMode* {.size: sizeof(uint32).} = enum
     SpvExecutionModeInvocations = 0
@@ -78,7 +74,6 @@ type
     SpvExecutionModeLocalSizeHintId = 39
     SpvExecutionModePostDepthCoverage = 4446
     SpvExecutionModeStencilRefReplacingEXT = 5027
-    SpvExecutionModeMax = 2147483647
 
   SpvStorageClass* {.size: sizeof(uint32).} = enum
     SpvStorageClassUniformConstant = 0
@@ -94,7 +89,6 @@ type
     SpvStorageClassAtomicCounter = 10
     SpvStorageClassImage = 11
     SpvStorageClassStorageBuffer = 12
-    SpvStorageClassMax = 2147483647
 
   SpvDim* {.size: sizeof(uint32).} = enum
     SpvDim1D = 0
@@ -104,7 +98,6 @@ type
     SpvDimRect = 4
     SpvDimBuffer = 5
     SpvDimSubpassData = 6
-    SpvDimMax = 2147483647
 
   SpvSamplerAddressingMode* {.size: sizeof(uint32).} = enum
     SpvSamplerAddressingModeNone = 0
@@ -112,12 +105,10 @@ type
     SpvSamplerAddressingModeClamp = 2
     SpvSamplerAddressingModeRepeat = 3
     SpvSamplerAddressingModeRepeatMirrored = 4
-    SpvSamplerAddressingModeMax = 2147483647
 
   SpvSamplerFilterMode* {.size: sizeof(uint32).} = enum
     SpvSamplerFilterModeNearest = 0
     SpvSamplerFilterModeLinear = 1
-    SpvSamplerFilterModeMax = 2147483647
 
   SpvImageFormat* {.size: sizeof(uint32).} = enum
     SpvImageFormatUnknown = 0
@@ -160,7 +151,6 @@ type
     SpvImageFormatRg8ui = 37
     SpvImageFormatR16ui = 38
     SpvImageFormatR8ui = 39
-    SpvImageFormatMax = 2147483647
 
   SpvImageChannelOrder* {.size: sizeof(uint32).} = enum
     SpvImageChannelOrderR = 0
@@ -183,7 +173,6 @@ type
     SpvImageChannelOrdersRGBA = 17
     SpvImageChannelOrdersBGRA = 18
     SpvImageChannelOrderABGR = 19
-    SpvImageChannelOrderMax = 2147483647
 
   SpvImageChannelDataType* {.size: sizeof(uint32).} = enum
     SpvImageChannelDataTypeSnormInt8 = 0
@@ -203,7 +192,6 @@ type
     SpvImageChannelDataTypeFloat = 14
     SpvImageChannelDataTypeUnormInt24 = 15
     SpvImageChannelDataTypeUnormInt1010102 = 16
-    SpvImageChannelDataTypeMax = 2147483647
 
   SpvImageOperandsShift* {.size: sizeof(uint32).} = enum
     SpvImageOperandsBiasShift = 0
@@ -214,7 +202,6 @@ type
     SpvImageOperandsConstOffsetsShift = 5
     SpvImageOperandsSampleShift = 6
     SpvImageOperandsMinLodShift = 7
-    SpvImageOperandsMax = 2147483647
 
   SpvImageOperandsMask* {.size: sizeof(uint32).} = enum
     SpvImageOperandsMaskNone = 0
@@ -233,7 +220,6 @@ type
     SpvFPFastMathModeNSZShift = 2
     SpvFPFastMathModeAllowRecipShift = 3
     SpvFPFastMathModeFastShift = 4
-    SpvFPFastMathModeMax = 2147483647
 
   SpvFPFastMathModeMask* {.size: sizeof(uint32).} = enum
     SpvFPFastMathModeMaskNone = 0
@@ -248,18 +234,15 @@ type
     SpvFPRoundingModeRTZ = 1
     SpvFPRoundingModeRTP = 2
     SpvFPRoundingModeRTN = 3
-    SpvFPRoundingModeMax = 2147483647
 
   SpvLinkageType* {.size: sizeof(uint32).} = enum
     SpvLinkageTypeExport = 0
     SpvLinkageTypeImport = 1
-    SpvLinkageTypeMax = 2147483647
 
   SpvAccessQualifier* {.size: sizeof(uint32).} = enum
     SpvAccessQualifierReadOnly = 0
     SpvAccessQualifierWriteOnly = 1
     SpvAccessQualifierReadWrite = 2
-    SpvAccessQualifierMax = 2147483647
 
   SpvFunctionParameterAttribute* {.size: sizeof(uint32).} = enum
     SpvFunctionParameterAttributeZext = 0
@@ -270,7 +253,6 @@ type
     SpvFunctionParameterAttributeNoCapture = 5
     SpvFunctionParameterAttributeNoWrite = 6
     SpvFunctionParameterAttributeNoReadWrite = 7
-    SpvFunctionParameterAttributeMax = 2147483647
 
   SpvDecoration* {.size: sizeof(uint32).} = enum
     SpvDecorationRelaxedPrecision = 0
@@ -326,7 +308,6 @@ type
     SpvDecorationSecondaryViewportRelativeNV = 5256
     SpvDecorationHlslCounterBufferGOOGLE = 5634
     SpvDecorationHlslSemanticGOOGLE = 5635
-    SpvDecorationMax = 2147483647
 
   SpvBuiltIn* {.size: sizeof(uint32).} = enum
     SpvBuiltInPosition = 0
@@ -393,12 +374,10 @@ type
     SpvBuiltInSecondaryViewportMaskNV = 5258
     SpvBuiltInPositionPerViewNV = 5261
     SpvBuiltInViewportMaskPerViewNV = 5262
-    SpvBuiltInMax = 2147483647
 
   SpvSelectionControlShift* {.size: sizeof(uint32).} = enum
     SpvSelectionControlFlattenShift = 0
     SpvSelectionControlDontFlattenShift = 1
-    SpvSelectionControlMax = 2147483647
 
   SpvSelectionControlMask* {.size: sizeof(uint32).} = enum
     SpvSelectionControlMaskNone = 0
@@ -410,7 +389,6 @@ type
     SpvLoopControlDontUnrollShift = 1
     SpvLoopControlDependencyInfiniteShift = 2
     SpvLoopControlDependencyLengthShift = 3
-    SpvLoopControlMax = 2147483647
 
   SpvLoopControlMask* {.size: sizeof(uint32).} = enum
     SpvLoopControlMaskNone = 0
@@ -424,7 +402,6 @@ type
     SpvFunctionControlDontInlineShift = 1
     SpvFunctionControlPureShift = 2
     SpvFunctionControlConstShift = 3
-    SpvFunctionControlMax = 2147483647
 
   SpvFunctionControlMask* {.size: sizeof(uint32).} = enum
     SpvFunctionControlMaskNone = 0
@@ -444,7 +421,6 @@ type
     SpvMemorySemanticsCrossWorkgroupMemoryShift = 9
     SpvMemorySemanticsAtomicCounterMemoryShift = 10
     SpvMemorySemanticsImageMemoryShift = 11
-    SpvMemorySemanticsMax = 2147483647
 
   SpvMemorySemanticsMask* {.size: sizeof(uint32).} = enum
     SpvMemorySemanticsMaskNone = 0
@@ -463,7 +439,6 @@ type
     SpvMemoryAccessVolatileShift = 0
     SpvMemoryAccessAlignedShift = 1
     SpvMemoryAccessNontemporalShift = 2
-    SpvMemoryAccessMax = 2147483647
 
   SpvMemoryAccessMask* {.size: sizeof(uint32).} = enum
     SpvMemoryAccessMaskNone = 0
@@ -477,13 +452,11 @@ type
     SpvScopeWorkgroup = 2
     SpvScopeSubgroup = 3
     SpvScopeInvocation = 4
-    SpvScopeMax = 2147483647
 
   SpvGroupOperation* {.size: sizeof(uint32).} = enum
     SpvGroupOperationReduce = 0
     SpvGroupOperationInclusiveScan = 1
     SpvGroupOperationExclusiveScan = 2
-    SpvGroupOperationMax = 2147483647
 
   SpvKernelEnqueueFlags* {.size: sizeof(uint32).} = enum
     SpvKernelEnqueueFlagsWaitKernel = 0
@@ -491,7 +464,6 @@ type
 
   SpvKernelProfilingInfoShift* {.size: sizeof(uint32).} = enum
     SpvKernelProfilingInfoCmdExecTimeShift = 0
-    SpvKernelProfilingInfoMax = 2147483647
 
   SpvKernelProfilingInfoMask* {.size: sizeof(uint32).} = enum
     SpvKernelProfilingInfoMaskNone = 0
@@ -583,7 +555,6 @@ type
     SpvCapabilitySubgroupShuffleINTEL = 5568
     SpvCapabilitySubgroupBufferBlockIOINTEL = 5569
     SpvCapabilitySubgroupImageBlockIOINTEL = 5570
-    SpvCapabilityMax = 2147483647
 
   SpvOp* {.size: sizeof(uint32).} = enum
     SpvOpNop = 0
@@ -918,5 +889,4 @@ type
     SpvOpSubgroupImageBlockWriteINTEL = 5578
     SpvOpDecorateStringGOOGLE = 5632
     SpvOpMemberDecorateStringGOOGLE = 5633
-    SpvOpMax = 2147483647
 
