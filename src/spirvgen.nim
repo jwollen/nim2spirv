@@ -39,6 +39,8 @@ type
     returnType: SpirvId
     argTypes: seq[SpirvId]
 
+proc genNode(g: SpirvGen; n: PNode)
+
 proc newModule(module: PSym): SpirvGen =
   new(result)
   result.nextId = 1
@@ -165,6 +167,17 @@ proc genFunction(g: SpirvGen; s: PSym): SpirvFunction =
   result.words.addInstruction(SpvOpReturn)
   result.words.addInstruction(SpvOpFunctionEnd)  
 
+proc genIdentDefs(g: SpirvGen; n: PNode) =
+  if n[0].kind == nkSym:
+    discard
+    #g.genSingleVar(n)
+  else:
+    discard
+    #g.genClosureVar(n)
+
+proc genSons(g: SpirvGen; n: PNode) =
+  for s in n: g.genNode(s)
+
 proc genNode(g: SpirvGen; n: PNode) =
   # var text = spaces(level * 2) & $n.kind
 
@@ -196,6 +209,7 @@ proc genNode(g: SpirvGen; n: PNode) =
   case n.kind:
     of nkEmpty: discard
     of nkCallKinds: discard
+    of nkIdentDefs: g.genIdentDefs(n)
     of nkProcDef, nkFuncDef, nkMethodDef, nkConverterDef: #g.genProcDef(n)
 
       let s = n.sons[namePos].sym
@@ -222,6 +236,9 @@ proc genNode(g: SpirvGen; n: PNode) =
         let function = g.genFunction(s)
         for executionModel in executionModels:
           g.entryPoints.add((function, executionModel))
+
+    of nkVarSection, nkLetSection, nkConstSection: g.genSons(n)
+    of nkStmtList: g.genSons(n)
 
     else: discard # internalError(n.info, "Unhandled node: " & $n)
 

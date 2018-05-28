@@ -5,7 +5,7 @@ import ../compiler/[
   modules, msgs, nimconf, options, passes, sem,
   service, platform, rod, passaux, idgen]
 
-import spirvgen
+import spirvgen, spirvSemantics
 
 proc semanticPasses =
   registerPass verbosePass
@@ -14,6 +14,7 @@ proc semanticPasses =
 proc commandCompileToSpirv(graph: ModuleGraph; cache: IdentCache) =
   setTarget(osStandalone, cpuI386)
   defineSymbol("spirv")
+  registerPass(spirvSemanticPass)
   semanticPasses()
   registerPass(spirvGenPass)
   compileProject(graph, cache)
