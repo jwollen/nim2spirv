@@ -1,101 +1,120 @@
-import strutils, os, times
+import strutils, os, times, parseopt
 
 import ../compiler/[
   commands, condsyms, idents, lexer, llstream, modulegraphs,
-  modules, msgs, nimconf, options, passes, sem,
-  service, platform, rod, passaux, idgen]
+  modules, msgs, nimconf, options, passes, sem, lineinfos,
+  service, platform, rod, passaux, idgen, extccomp, scriptconfig]
 
 import spirvgen, spirvSemantics
 
-proc semanticPasses =
-  registerPass verbosePass
-  registerPass semPass
+proc semanticPasses(graph: ModuleGraph) =
+  registerPass(graph, verbosePass)
+  registerPass(graph, semPass)
 
-proc commandCompileToSpirv(graph: ModuleGraph; cache: IdentCache) =
-  setTarget(osStandalone, cpuI386)
-  defineSymbol("spirv")
-  registerPass(spirvSemanticPass)
-  semanticPasses()
-  registerPass(spirvGenPass)
-  compileProject(graph, cache)
+proc commandCompileToSpirv(graph: ModuleGraph) =
+  setTarget(graph.config.target, osStandalone, cpuI386)
+  defineSymbol(graph.config.symbols, "spirv")
+  registerPass(graph, spirvSemanticPass)
+  semanticPasses(graph)
+  registerPass(graph, spirvGenPass)
+  compileProject(graph)
 
-proc mainCommand*(graph: ModuleGraph; cache: IdentCache) =
-  setupModuleCache()
+proc mainCommand*(graph: ModuleGraph) =
+  let conf = graph.config
+  let cache = graph.cache
+
+  setupModuleCache(graph)
   # In "nim serve" scenario, each command must reset the registered passes
-  clearPasses()
-  gLastCmdTime = epochTime()
-  searchPaths.add(options.libpath)
-  when false: # gProjectFull.len != 0:
-    # current path is always looked first for modules
-    prependStr(searchPaths, gProjectPath)
+  clearPasses(graph)
+  conf.lastCmdTime = epochTime()
+  conf.searchPaths.add(conf.libpath)
   setId(100)
-  case command.normalize
 
+  case conf.command.normalize
   # Take over the default compile command
   of "spirv", "compiletospirv":
     #gCmd = cmdCompileToSpirv
-    commandCompileToSpirv(graph, cache)
-
+    commandCompileToSpirv(graph)
   else:
-    rawMessage(errInvalidCommandX, command)
+    rawMessage(conf, errGenerated, "invalid command: " & conf.command)
 
-  if msgs.gErrorCounter == 0 and
-     gCmd notin {cmdInterpret, cmdRun, cmdDump}:
-    rawMessage(hintSuccess, [])
-
-var configRef = newConfigRef()
-
-proc mainCommand*() = mainCommand(newModuleGraph(configRef), newIdentCache())
-
-proc handleCmdLine(config: ConfigRef) =
-  # For now, we reuse the nim command line options parser, mainly because
-  # the options are used all over the compiler, but also because we want to
-  # act as a drop-in replacement (for now)
-  # Most of this is taken from the main nim command
-  if os.paramCount() == 0:
-    echo """
-you can: nlvm c <filename> (see standard nim compiler for options)
-magic options:
-  --nlvm.target=wasm32 cross-compile to WebAssembly
-"""
-  else:
-  # Process command line arguments:
-    processCmdLine(passCmd1, "", config)
-    if gProjectName == "-":
-      gProjectName = "stdinfile"
-      gProjectFull = "stdinfile"
-      gProjectPath = canonicalizePath getCurrentDir()
-      gProjectIsStdin = true
-    elif gProjectName != "":
-      try:
-        gProjectFull = canonicalizePath(gProjectName)
-      except OSError:
-        gProjectFull = gProjectName
-      let p = splitFile(gProjectFull)
-      let dir = if p.dir.len > 0: p.dir else: getCurrentDir()
-      gProjectPath = canonicalizePath dir
-      gProjectName = p.name
+  if conf.errorCounter == 0 and
+     conf.cmd notin {cmdInterpret, cmdRun, cmdDump}:
+    when declared(system.getMaxMem):
+      let usedMem = formatSize(getMaxMem()) & " peakmem"
     else:
-      gProjectPath = canonicalizePath getCurrentDir()
+      let usedMem = formatSize(getTotalMem())
+    rawMessage(conf, hintSuccessX, [$conf.linesCompiled,
+               formatFloat(epochTime() - conf.lastCmdTime, ffDecimal, 3),
+               usedMem,
+               if isDefined(conf, "release"): "Release Build"
+               else: "Debug Build"])
 
-    echo gProjectPath
+  resetAttributes(conf)
 
-    nimconf.loadConfigs(DefaultConfig)
-    service.processCmdLine(passCmd2, "", config)
+proc processCmdLine(pass: TCmdLinePass, cmd: string; config: ConfigRef) =
+  var p = parseopt.initOptParser(cmd)
+  var argsCount = 0
+  while true:
+    parseopt.next(p)
+    case p.kind
+    of cmdEnd: break
+    of cmdLongoption, cmdShortOption:
+      if p.key == " ":
+        p.key = "-"
+        if processArgument(pass, p, argsCount, config): break
+      else:
+        processSwitch(pass, p, config)
+    of cmdArgument:
+      if processArgument(pass, p, argsCount, config): break
+  if pass == passCmd2:
+    if optRun notin config.globalOptions and config.arguments.len > 0 and config.command.normalize != "run":
+      rawMessage(config, errGenerated, errArgsNeedRunOption)
 
-    gSelectedGC = gcNone
-    defineSymbol("nogc")
+proc handleCmdLine(cache: IdentCache; conf: ConfigRef) =
+  condsyms.initDefines(conf.symbols)
+  if paramCount() == 0:
+    writeCommandLineUsage(conf, conf.helpWritten)
+  else:
+    # Process command line arguments:
+    processCmdLine(passCmd1, "", conf)
+    if conf.projectName == "-":
+      conf.projectName = "stdinfile"
+      conf.projectFull = "stdinfile"
+      conf.projectPath = canonicalizePath(conf, getCurrentDir())
+      conf.projectIsStdin = true
+    elif conf.projectName != "":
+      try:
+        conf.projectFull = canonicalizePath(conf, conf.projectName)
+      except OSError:
+        conf.projectFull = conf.projectName
+      let p = splitFile(conf.projectFull)
+      let dir = if p.dir.len > 0: p.dir else: getCurrentDir()
+      conf.projectPath = canonicalizePath(conf, dir)
+      conf.projectName = p.name
+    else:
+      conf.projectPath = canonicalizePath(conf, getCurrentDir())
+    loadConfigs(DefaultConfig, cache, conf) # load all config files
+    let scriptFile = conf.projectFull.changeFileExt("nims")
+    if fileExists(scriptFile):
+      runNimScript(cache, scriptFile, freshDefines=false, conf)
+      # 'nim foo.nims' means to just run the NimScript file and do nothing more:
+      if scriptFile == conf.projectFull: return
+    elif fileExists(conf.projectPath / "config.nims"):
+      # directory wide NimScript file
+      runNimScript(cache, conf.projectPath / "config.nims", freshDefines=false, conf)
+    # now process command line arguments again, because some options in the
+    # command line can overwite the config file's settings
+    extccomp.initVars(conf)
+    processCmdLine(passCmd2, "", conf)
+    if conf.command == "":
+      rawMessage(conf, errGenerated, "command missing")
+    mainCommand(newModuleGraph(cache, conf))
+    if optHints in conf.options and hintGCStats in conf.notes: echo(GC_getStatistics())
+    #echo(GC_getStatistics())
 
-    # default signal handler does memory allocations and all kinds of
-    # disallowed-in-signal-handler-stuff
-    defineSymbol("noSignalHandler")
-
-    # lib/pure/bitops.num
-    defineSymbol("noIntrinsicsBitOpts")
-
-    mainCommand()
-
-var tmp = getAppDir()
-options.gPrefixDir = tmp / "Nim"
-condsyms.initDefines()
-handleCmdLine(configRef)
+let conf = newConfigRef()
+handleCmdLine(newIdentCache(), conf)
+when declared(GC_setMaxPause):
+  echo GC_getStatistics()
+msgQuit(int8(conf.errorCounter > 0))

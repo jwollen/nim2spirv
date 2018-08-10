@@ -5,7 +5,7 @@ import
 import ../compiler/[
   ast, astalgo, platform, magicsys, extccomp, trees, bitsets,
   nversion, nimsets, msgs, idents, types, options, ropes,
-  passes, ccgutils, wordrecg, renderer, rodread, rodutils,
+  passes, ccgutils, wordrecg, renderer, rodutils,
   cgmeth, lowerings, sighashes, modulegraphs]
 
 import
@@ -52,27 +52,23 @@ proc genNode(g: SpirvGen; n: PNode) =
   dec level
 
 proc myProcess(b: PPassContext, n: PNode): PNode =
-  if passes.skipCodegen(n): return n
   result = n
-
+  if b == nil: return
   var m = SpirvGen(b)
-  if m.module == nil: internalError(n.info, "myProcess")
+  if passes.skipCodegen(m.config, n): return
   
   m.genNode(n)
 
 proc myClose(graph: ModuleGraph; b: PPassContext, n: PNode): PNode =
-  
-  if passes.skipCodegen(n): return n
   result = n
-
+  if b == nil: return
   var m = SpirvGen(b)
-  m.genNode(n)
+  if passes.skipCodegen(m.config, n): return
 
-proc myOpenCached(graph: ModuleGraph; s: PSym, rd: PRodReader): PPassContext =
-  internalError("Symbol files are not supported by the SPIR-V backend")
-  result = nil
+  if n != nil:
+    m.genNode(n)
 
-proc myOpen(graph: ModuleGraph; module: PSym; cache: IdentCache): PPassContext =
+proc myOpen(graph: ModuleGraph; module: PSym): PPassContext =
   return newModule(module)
 
-const spirvSemanticPass* = makePass(myOpen, myOpenCached, myProcess, myClose)
+const spirvSemanticPass* = makePass(myOpen, myProcess, myClose)

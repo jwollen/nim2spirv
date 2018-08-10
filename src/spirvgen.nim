@@ -243,11 +243,10 @@ proc genNode(g: SpirvGen; n: PNode) =
     else: discard # internalError(n.info, "Unhandled node: " & $n)
 
 proc myProcess(b: PPassContext, n: PNode): PNode =
-  if passes.skipCodegen(n): return n
   result = n
-
+  if b == nil: return
   var m = SpirvGen(b)
-  if m.module == nil: internalError(n.info, "myProcess")
+  if passes.skipCodegen(m.config, n): return
   
   m.genNode(n)
   # var p = newProc(globals, m, nil, m.module.options)
@@ -258,11 +257,11 @@ proc myProcess(b: PPassContext, n: PNode): PNode =
 
 proc myClose(graph: ModuleGraph; b: PPassContext, n: PNode): PNode =
   
-  if passes.skipCodegen(n): return n
   result = n
-
+  if b == nil: return
   var m = SpirvGen(b)
-  let glslId = m.generateId()
+  if passes.skipCodegen(m.config, n): return
+
   m.genNode(n)
 
   # Header
@@ -337,11 +336,7 @@ proc myClose(graph: ModuleGraph; b: PPassContext, n: PNode): PNode =
   #   for obj, content in items(globals.classes):
   #     genClass(obj, content, ext)
 
-proc myOpenCached(graph: ModuleGraph; s: PSym, rd: PRodReader): PPassContext =
-  internalError("Symbol files are not supported by the SPIR-V backend")
-  result = nil
-
-proc myOpen(graph: ModuleGraph; module: PSym; cache: IdentCache): PPassContext =
+proc myOpen(graph: ModuleGraph; module: PSym): PPassContext =
   return newModule(module)
 
-const spirvGenPass* = makePass(myOpen, myOpenCached, myProcess, myClose)
+const spirvGenPass* = makePass(myOpen, myProcess, myClose)
