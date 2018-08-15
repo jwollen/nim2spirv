@@ -3,9 +3,11 @@ import strutils, os, times, parseopt
 import ../compiler/[
   commands, condsyms, idents, lexer, llstream, modulegraphs,
   modules, msgs, nimconf, options, passes, sem, lineinfos,
-  service, platform, rod, passaux, idgen, extccomp, scriptconfig]
+  platform, rod, passaux, idgen, extccomp, scriptconfig]
 
-import nim2spirv/[spirvgen, spirvSemantics]
+import nim2spirv/[spirvgen
+#, spirvSemantics
+]
 
 proc semanticPasses(graph: ModuleGraph) =
   registerPass(graph, verbosePass)
@@ -14,7 +16,7 @@ proc semanticPasses(graph: ModuleGraph) =
 proc commandCompileToSpirv(graph: ModuleGraph) =
   setTarget(graph.config.target, osStandalone, cpuI386)
   defineSymbol(graph.config.symbols, "spirv")
-  registerPass(graph, spirvSemanticPass)
+  #registerPass(graph, spirvSemanticPass)
   semanticPasses(graph)
   registerPass(graph, spirvGenPass)
   compileProject(graph)
