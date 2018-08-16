@@ -5,8 +5,8 @@ import
 import ../compiler/[
   ast, astalgo, platform, magicsys, extccomp, trees, bitsets,
   nversion, nimsets, msgs, idents, types, options, ropes,
-  passes, ccgutils, wordrecg, renderer, rodread, rodutils,
-  cgmeth, lowerings, sighashes, modulegraphs]
+  passes, ccgutils, wordrecg, renderer, rodutils,
+  cgmeth, lowerings, sighashes, modulegraphs, lineinfos]
 
 import
   spirvTypes, glslTypes, openclTypes
@@ -14,7 +14,14 @@ import
 type
   SpirvId = uint32
 
+  SpirvModuleList* = ref object of RootObj
+    modules*: seq[SpirvGen]     # list of all compiled modules
+    config*: ConfigRef
+    graph*: ModuleGraph
+
   SpirvGenObj = object of TPassContext
+    g*: SpirvModuleList
+    filename: string
     words: seq[uint32]
     module: PSym
     nextId: uint32
@@ -39,10 +46,17 @@ type
     returnType: SpirvId
     argTypes: seq[SpirvId]
 
+template config*(m: SpirvGen): ConfigRef = m.g.config
+
 proc genNode(g: SpirvGen; n: PNode)
 
-proc newModule(module: PSym): SpirvGen =
+proc newModuleList*(g: ModuleGraph): SpirvModuleList =
+  SpirvModuleList(modules: @[], config: g.config, graph: g)
+
+proc rawNewModule(g: SpirvModuleList; module: PSym, filename: string): SpirvGen =
   new(result)
+  result.g = g
+  result.filename = filename
   result.nextId = 1
   result.words = @[]
   result.module = module
@@ -52,6 +66,13 @@ proc newModule(module: PSym): SpirvGen =
   # result.sigConflicts = initCountTable[SigHash]()
   # if globals == nil:
   #   globals = newGlobals()
+
+proc rawNewModule(g: SpirvModuleList; module: PSym; conf: ConfigRef): SpirvGen =
+  result = rawNewModule(g, module, toFullPath(conf, module.position.FileIndex))
+  
+proc newModule(g: SpirvModuleList; module: PSym; conf: ConfigRef): SpirvGen =
+  # we should create only one cgen module for each module sym
+  result = rawNewModule(g, module, conf)
 
 proc addInstruction(stream: var seq[uint32]; opCode: SpvOp; operands: varargs[uint32]) =
 
@@ -63,22 +84,15 @@ proc addInstruction(stream: var seq[uint32]; opCode: SpvOp; operands: varargs[ui
   stream.add(head)
   stream.add(operands)
 
-proc writeOutput(g: SpirvGen, project: string) =
-  var outFile: string
-  if options.outFile.len > 0:
-    if options.outFile.isAbsolute:
-      outFile = options.outFile
-    else:
-      outFile = getCurrentDir() / options.outFile
-  else:
-    outFile = project & ".spv"
+proc writeOutput(g: SpirvGen) =
+  let outFile = changeFileExt(completeCFilePath(g.config, g.filename), "spv")
 
   var file: File
   if file.open(outFile, fmWrite):
     discard file.writeBuffer(addr g.words[0], g.words.len * sizeof(uint32))
     file.close()
   else:
-    errorHandler(rCannotOpenFile, outFile, false)
+    rawMessage(g.config, errCannotOpenFile, g.filename)
 
 proc toWords(text: string): seq[uint32] =
   newSeq(result, (text.len + 1 + 3) div 4)
@@ -158,13 +172,15 @@ proc genFunction(g: SpirvGen; s: PSym): SpirvFunction =
   new(result)
   result.symbol = s
   result.id = g.generateId()
+  let labelId = g.generateId()
   result.words = @[]
 
   g.functions.add(s.id, result)
 
-  result.words.addInstruction(SpvOpFunction, functionType.id, result.id, 0'u32, functionType.returnType)
-  #result.words.addInstruction(SpvOpLabel, 5'u32)
-  result.words.addInstruction(SpvOpReturn)
+  result.words.addInstruction(SpvOpFunction, functionType.returnType, result.id, 0'u32, functionType.id)
+  result.words.addInstruction(SpvOpLabel, labelId)
+  if functionType.returnType == g.voidType:
+    result.words.addInstruction(SpvOpReturn)
   result.words.addInstruction(SpvOpFunctionEnd)  
 
 proc genIdentDefs(g: SpirvGen; n: PNode) =
@@ -262,6 +278,7 @@ proc myClose(graph: ModuleGraph; b: PPassContext, n: PNode): PNode =
   var m = SpirvGen(b)
   if passes.skipCodegen(m.config, n): return
 
+  let glslId = m.generateId()
   m.genNode(n)
 
   # Header
@@ -319,7 +336,7 @@ proc myClose(graph: ModuleGraph; b: PPassContext, n: PNode): PNode =
     # Blocks
       # Label (opt preceeded by Line)
 
-  m.writeOutput(changeFileExt(gProjectFull, ""))
+  m.writeOutput()
 
   # if sfMainModule in m.module.flags:
   #   let ext = "js"
@@ -336,7 +353,14 @@ proc myClose(graph: ModuleGraph; b: PPassContext, n: PNode): PNode =
   #   for obj, content in items(globals.classes):
   #     genClass(obj, content, ext)
 
+
+template injectG() {.dirty.} =
+  if graph.backend == nil:
+    graph.backend = newModuleList(graph)
+  let g = SpirvModuleList(graph.backend)
+
 proc myOpen(graph: ModuleGraph; module: PSym): PPassContext =
-  return newModule(module)
+  injectG()
+  result = newModule(g, module, graph.config)
 
 const spirvGenPass* = makePass(myOpen, myProcess, myClose)
