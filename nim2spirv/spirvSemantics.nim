@@ -14,12 +14,14 @@ import
 type
   SpirvGenObj = object of TPassContext
     module: PSym
+    config: ConfigRef
 
   SpirvGen = ref SpirvGenObj
 
-proc newModule(module: PSym): SpirvGen =
+proc newModule(module: PSym; config: ConfigRef): SpirvGen =
   new(result)
   result.module = module
+  result.config = config
 
 var level = 0
 
@@ -69,6 +71,6 @@ proc myClose(graph: ModuleGraph; b: PPassContext, n: PNode): PNode =
     m.genNode(n)
 
 proc myOpen(graph: ModuleGraph; module: PSym): PPassContext =
-  return newModule(module)
+  return newModule(module, graph.config)
 
 const spirvSemanticPass* = makePass(myOpen, myProcess, myClose)
