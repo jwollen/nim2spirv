@@ -26,6 +26,7 @@ proc newModule(module: PSym; config: ConfigRef): SpirvGen =
 var level = 0
 
 proc genNode(g: SpirvGen; n: PNode) =
+  
   if sfMainModule notin g.module.flags:
     return
 
@@ -35,9 +36,12 @@ proc genNode(g: SpirvGen; n: PNode) =
     of nkSym: text &= ": " & n.sym.name.s
     of nkIdent: text &= ": " & n.ident.s
     of nkStmtList: text &= ": " & $n.sonsLen
+    of nkIntLit: text &= ": " & $n.intVal
+    of nkFloatLit: text &= ": " & $n.floatVal
+    of nkStrLit: text &= ": " & $n.strVal
     else: discard
     
-  echo text
+  #echo text
 
   inc level
 

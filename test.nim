@@ -17,11 +17,12 @@ type
     InstanceId
     PrimitiveId
 
-  Vector2* = object
-    elements*: array[2, float]   
+  Vector*[T; size: static[int]] = object
+    elements*: array[2, float]
 
-  Vector4* = object
-    elements*: array[4, float]   
+  Vector2* = Vector[float32, 2]
+
+  Vector4* = Vector[float32, 4]   
 
 template stage*(ShaderStage) {.pragma.}
 template builtin*(Builtin) {.pragma.}
