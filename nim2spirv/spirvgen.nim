@@ -28,19 +28,29 @@ type
   SpirvGenObj = object of TPassContext
     g*: SpirvModuleList
     filename: string
-    words: seq[uint32]
+    allWords: seq[uint32]
+    currentFunction: SpirvFunction
     module: PSym
     nextId: uint32
     entryPoints: seq[tuple[function: SpirvFunction; executionModel: SpvExecutionModel]]
     variables: Table[int, SpirvVariable]
     functions: Table[int, SpirvFunction]
     functionTypes: seq[SpirvFunctionType]
-    typeWords: seq[uint32]
+
     decorationWords: seq[uint32]
+    constantWords: seq[uint32]
+    typeWords: seq[uint32]
+
     voidType: SpirvId
     boolType: SpirvId
     intTypes: array[TypeWidth, array[bool, SpirvId]]
     floatTypes: array[TypeWidth, SpirvId]
+    pointerTypes: Table[(SpirvId, SpvStorageClass), SpirvId]
+
+    intConstants: Table[(SpirvId, BiggestInt), SpirvId]
+    floatConstants: Table[(SpirvId, BiggestFloat), SpirvId]
+    trueConstant: SpirvId
+    falseConstant: SpirvId
 
   SpirvGen = ref SpirvGenObj
 
@@ -61,7 +71,13 @@ type
 
 template config*(m: SpirvGen): ConfigRef = m.g.config
 
-proc genNode(g: SpirvGen; n: PNode)
+proc words(m: SpirvGen): var seq[uint32] =
+  if m.currentFunction != nil:
+    return m.currentFunction.words
+  else:
+    return m.allWords 
+
+proc genNode(g: SpirvGen; n: PNode): SpirvId
 
 proc newModuleList*(g: ModuleGraph): SpirvModuleList =
   SpirvModuleList(modules: @[], config: g.config, graph: g)
@@ -71,12 +87,12 @@ proc rawNewModule(g: SpirvModuleList; module: PSym, filename: string): SpirvGen 
   result.g = g
   result.filename = filename
   result.nextId = 1
-  result.words = @[]
   result.module = module
-  result.entryPoints = @[]
   result.functions = initTable[int, SpirvFunction]()
   result.variables = initTable[int, SpirvVariable]()
-  result.typeWords = @[]
+  result.pointerTypes = initTable[(SpirvId, SpvStorageClass), SpirvId]()
+  result.intConstants = initTable[(SpirvId, BiggestInt), SpirvId]()
+  result.floatConstants = initTable[(SpirvId, BiggestFloat), SpirvId]()
   # result.sigConflicts = initCountTable[SigHash]()
   # if globals == nil:
   #   globals = newGlobals()
@@ -168,17 +184,17 @@ proc genType(g: SpirvGen; t: PType): SpirvId =
     of tyBool: return g.genBoolType()
 
     #of tyFloat16: return g.genFloatType(tw16)
-    of tyFloat32: return g.genFloatType(tw32)
+    of tyFloat32, tyFloat: return g.genFloatType(tw32)
     of tyFloat64: return g.genFloatType(tw64)
     
     of tyInt8: return g.genIntType(tw8, false)
     of tyInt16: return g.genIntType(tw16, false)
-    of tyInt32: return g.genIntType(tw32, false)
+    of tyInt32, tyInt: return g.genIntType(tw32, false)
     of tyInt64: return g.genIntType(tw64, false)
 
     of tyUInt8: return g.genIntType(tw8, true)
     of tyUInt16: return g.genIntType(tw16, true)
-    of tyUInt32: return g.genIntType(tw32, true)
+    of tyUInt32, tyUInt: return g.genIntType(tw32, true)
     of tyUInt64: return g.genIntType(tw64, true)
 
     of tyGenericInst:
@@ -187,22 +203,52 @@ proc genType(g: SpirvGen; t: PType): SpirvId =
         g.typeWords.addInstruction(SpvOpTypeVector, id, g.genType(t[1]), t[2].n.intVal.uint32)
         return id
 
-        # TODO: Cashse with t.lastSon.sym.id
+        # TODO: Cache with t.lastSon.sym.id
 
-      #echo t.sym.name.s
-      # for x in t.sons:
-      #   echo x.kind
-      #   echo x
-      #   for y in x.sons:
-      #     if y != nil:
-      #       echo "  ", y.kind
-      #       echo "  ", y
-      #       echo "  ------"
-      #   echo "======"
-      #return g.genType(t.lastSon)
+    of tyVar:
+      return g.genType(t[0])
+
     of tyDistinct, tyAlias, tyInferred: return g.genType(t.lastSon)
     #of tyObject:
-    else: discard
+    else:
+      echo t.kind
+      echo t
+
+proc genPointerType(g: SpirvGen; valueType: SpirvId; storageClass: SpvStorageClass): SpirvId =
+  let key = (valueType, storageClass)
+  if g.pointerTypes.contains(key):
+    return g.pointerTypes[key]
+
+  result = g.generateId()
+  g.pointerTypes.add(key, result)
+  g.typeWords.addInstruction(SpvOpTypePointer, result, storageClass.uint32, valueType)
+
+proc genConstant(g: SpirvGen; valueType: SpirvId; value: SomeInteger): SpirvId =
+  let key = (valueType, value.BiggestInt)
+  if g.intConstants.contains(key):
+    return g.intConstants[key]
+
+  result = g.generateId()
+  g.intConstants.add(key, result)
+  g.constantWords.addInstruction(SpvOpConstant, valueType, result, value.uint32) # ToWords
+
+proc genConstant(g: SpirvGen; valueType: SpirvId; value: SomeFloat): SpirvId =
+  let key = (valueType, value.BiggestFloat)
+  if g.floatConstants.contains(key):
+    return g.floatConstants[key]
+
+  result = g.generateId()
+  g.floatConstants.add(key, result)
+  g.constantWords.addInstruction(SpvOpConstant, valueType, result, value.float32) # ToWords
+  
+proc genBoolConstant(g: SpirvGen; value: bool): SpirvId =
+  result = if value: g.trueConstant else: g.falseConstant
+  if result == 0:
+    result = g.generateId()
+    let op = if value: SpvOpConstantTrue else: SpvOpConstantFalse
+    if value: g.trueConstant = result
+    else: g.falseConstant = result
+    g.constantWords.addInstruction(op, result)
 
 proc genParamType(g: SpirvGen; t: PType): SpirvId = discard
 
@@ -255,6 +301,11 @@ proc genFunction(g: SpirvGen; s: PSym): SpirvFunction =
 
   result.words.addInstruction(SpvOpFunction, functionType.returnType, result.id, 0'u32, functionType.id)
   result.words.addInstruction(SpvOpLabel, labelId)
+
+  g.currentFunction = result
+  discard g.genNode(s.getBody())
+  g.currentFunction = nil
+
   if functionType.returnType == g.genVoidType():
     result.words.addInstruction(SpvOpReturn)
   result.words.addInstruction(SpvOpFunctionEnd)  
@@ -291,51 +342,60 @@ proc genIdentDefs(g: SpirvGen; n: PNode): SpirvVariable =
   g.variables.add(result.symbol.id, result)
 
   # TODO: Cache pointer type
-  var variableType = g.genType(result.symbol.typ)
-  var pointerType = g.generateId()
-  g.typeWords.addInstruction(SpvOpTypePointer, pointerType, storageClass.uint32, variableType)
+  let 
+    variableType = g.genType(result.symbol.typ)
+    pointerType = g.genPointerType(variableType, storageClass)
 
   # TODO: Initializer
   result.words.addInstruction(SpvOpVariable, pointerType, result.id, storageClass.uint32)
 
 proc genSons(g: SpirvGen; n: PNode) =
-  for s in n: g.genNode(s)
+  for s in n: discard g.genNode(s)
 
-proc genNode(g: SpirvGen; n: PNode) =
-  # var text = spaces(level * 2) & $n.kind
-
-  # case n.kind:
-  #   of nkSym: text &= ": " & n.sym.name.s
-  #   of nkIdent: text &= ": " & n.ident.s
-  #   of nkStmtList: text &= ": " & $n.sonsLen
-  #   else: discard
-    
-  # echo text
-
-  # inc level
-
-  # case n.kind:
-  #   of nkCharLit..nkUInt64Lit: discard
-  #   of nkFloatLit..nkFloat128Lit: discard
-  #   of nkStrLit..nkTripleStrLit: discard
-  #   of nkSym: discard
-  #   of nkIdent: discard
-  #   else:
-  #     for child in n.sons:
-  #       g.genNode(child)
-
-  # dec level
+proc genNode(g: SpirvGen; n: PNode): SpirvId =
 
   if sfMainModule notin g.module.flags:
     return
 
   case n.kind:
     of nkEmpty: discard
-    of nkCallKinds: discard
+
+    of nkIntLit: return g.genConstant(g.genType(n.typ), n.intVal.int32)
+
+    of nkHiddenAddr:
+      return g.genNode(n[0])
+
+    of nkSym:
+      if g.variables.contains(n.sym.id):
+        return g.variables[n.sym.id].id
+
+    of nkCallKinds:
+
+      if n[0].sym.name.s == "[]=":
+        let
+          base = g.genNode(n[1])
+          left = g.generateId()
+          leftType = g.genType(n[1].typ)
+
+        g.words.addInstruction(SpvOpAccessChain, g.genPointerType(leftType, SpvStorageClassOutput), left, base, g.genNode(n[2]))
+        g.words.addInstruction(SpvOpStore, left, g.genNode(n[3]))
+
+      elif n[0].sym.name.s == "[]":
+        let
+          base = g.genNode(n[1])
+          temp = g.generateId()
+          resultType = g.genType(n.typ)
+        result = g.generateId()
+
+        g.words.addInstruction(SpvOpAccessChain, g.genPointerType(resultType, SpvStorageClassInput), temp, base, g.genNode(n[2]))
+        g.words.addInstruction(SpvOpLoad, resultType, result, temp)
+
     #of nkIdentDefs: discard g.genIdentDefs(n)
-    of nkProcDef, nkFuncDef, nkMethodDef, nkConverterDef: #g.genProcDef(n)
+    of nkProcDef, nkFuncDef, nkMethodDef, nkIteratorDef, nkConverterDef: #g.genProcDef(n)
 
       let s = n.sons[namePos].sym
+      if sfImportc in s.flags:
+        return
 
       var executionModels: set[SpvExecutionModel]
 
@@ -374,7 +434,7 @@ proc myProcess(b: PPassContext, n: PNode): PNode =
   var m = SpirvGen(b)
   if passes.skipCodegen(m.config, n): return
   
-  m.genNode(n)
+  discard m.genNode(n)
   # var p = newProc(globals, m, nil, m.module.options)
   # p.unique = globals.unique
   # genModule(p, n)
@@ -389,7 +449,7 @@ proc myClose(graph: ModuleGraph; b: PPassContext, n: PNode): PNode =
   if passes.skipCodegen(m.config, n): return
 
   let glslId = m.generateId()
-  m.genNode(n)
+  discard m.genNode(n)
 
   # Header
   m.words.add(SpvMagicNumber)
@@ -427,6 +487,7 @@ proc myClose(graph: ModuleGraph; b: PPassContext, n: PNode): PNode =
     # MemberNames
   # Annotations
     # Decorates
+  m.words.add(m.decorationWords)
     # MemberDescorates
     # GroupDecorates
     # GroupMemberDecorates
@@ -435,6 +496,7 @@ proc myClose(graph: ModuleGraph; b: PPassContext, n: PNode): PNode =
     # Types
   m.words.add(m.typeWords)
     # Constants
+  m.words.add(m.constantWords)
     # Non-function Variables
   for id, variable in m.variables:
     m.words.add(variable.words)
