@@ -229,6 +229,23 @@ proc genPointerType(g: SpirvGen; valueType: SpirvId; storageClass: SpvStorageCla
   g.pointerTypes.add(key, result)
   g.typeWords.addInstruction(SpvOpTypePointer, result, storageClass.uint32, valueType)
 
+func toWords(value: SomeNumber): seq[uint32] =
+  const wordCount = (sizeof(value) + 3) div 4
+
+  result = newSeq[uint32](wordCount)
+  var word = cast[BiggestUInt](value)
+  for i in 0 ..< wordCount:
+    result[i] = cast[uint32](word)
+    word = word shr 32
+  
+  # Sign extend integers
+  when value is SomeSignedInt:
+    if value < 0:
+      const
+        bitsInLastWord = (sizeof(value) mod 4) * 8
+        mask = not ((1 shl bitsInLastWord) - 1).uint32 
+      result[^1] = result[^1] or mask
+    
 proc genConstant(g: SpirvGen; valueType: SpirvId; value: SomeInteger): SpirvId =
   let key = (valueType, value.BiggestInt)
   if g.intConstants.contains(key):
@@ -236,7 +253,7 @@ proc genConstant(g: SpirvGen; valueType: SpirvId; value: SomeInteger): SpirvId =
 
   result = g.generateId()
   g.intConstants.add(key, result)
-  g.constantWords.addInstruction(SpvOpConstant, valueType, result, value.uint32) # ToWords
+  g.constantWords.addInstruction(SpvOpConstant, @[valueType, result] & value.toWords())
 
 proc genConstant(g: SpirvGen; valueType: SpirvId; value: SomeFloat): SpirvId =
   let key = (valueType, value.BiggestFloat)
@@ -245,8 +262,25 @@ proc genConstant(g: SpirvGen; valueType: SpirvId; value: SomeFloat): SpirvId =
 
   result = g.generateId()
   g.floatConstants.add(key, result)
-  g.constantWords.addInstruction(SpvOpConstant, valueType, result, value.float32) # ToWords
+  g.constantWords.addInstruction(SpvOpConstant, @[valueType, result] & value.toWords())
   
+proc genConstant(g: SpirvGen; n: PNode): SpirvId =
+  case n.typ.kind:
+    of tyInt8: return g.genConstant(g.genType(n.typ), n.intVal.int8)
+    of tyInt16: return g.genConstant(g.genType(n.typ), n.intVal.int16)
+    of tyInt, tyInt32: return g.genConstant(g.genType(n.typ), n.intVal.int32)
+    of tyInt64: return g.genConstant(g.genType(n.typ), n.intVal.int64)
+
+    of tyUInt8: return g.genConstant(g.genType(n.typ), n.intVal.uint8)
+    of tyUInt16: return g.genConstant(g.genType(n.typ), n.intVal.uint16)
+    of tyUInt, tyUInt32: return g.genConstant(g.genType(n.typ), n.intVal.uint32)
+    of tyUInt64: return g.genConstant(g.genType(n.typ), n.intVal.uint64)
+
+    of tyFloat, tyFloat32: return g.genConstant(g.genType(n.typ), n.floatVal.float32)
+    of tyFloat64: return g.genConstant(g.genType(n.typ), n.floatVal.float64)
+
+    else: discard
+
 proc genBoolConstant(g: SpirvGen; value: bool): SpirvId =
   result = if value: g.trueConstant else: g.falseConstant
   if result == 0:
@@ -366,7 +400,8 @@ proc genNode(g: SpirvGen; n: PNode): SpirvId =
   case n.kind:
     of nkEmpty: discard
 
-    of nkIntLit: return g.genConstant(g.genType(n.typ), n.intVal.int32)
+    # TODO: Interpret as expected type, if it's used in an expression, so no cast is necessary
+    of nkIntLit .. nkFloat128Lit: return g.genConstant(n)
 
     of nkHiddenAddr:
       return g.genNode(n[0])
