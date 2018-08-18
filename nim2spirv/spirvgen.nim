@@ -38,6 +38,7 @@ type
     functionTypes: seq[SpirvFunctionType]
 
     decorationWords: seq[uint32]
+    nameWords: seq[uint32]
     constantWords: seq[uint32]
     typeWords: seq[uint32]
 
@@ -200,22 +201,46 @@ proc genType(m: SpirvModule; t: PType): SpirvId =
     of tyUInt64: return m.genIntType(tw64, true)
 
     of tyGenericInst:
-      if m.types.contains(t.sym.id):
-        echo "found ", t
-        return m.types[t.sym.id]
 
-      if t[0].lastSon.sym.name.s == "Vector":
+      # The last child is concrete, unless this is an alias.
+      # Then it's another generic inst.
+      var inst = t
+      if inst.lastSon.kind == tyGenericInst:
+        inst = inst.lastSon
+
+      # Use the concrete type's symbol for caching.
+      # The generic inst might not have one.
+      if m.types.contains(inst.lastSon.sym.id):
+        return m.types[inst.lastSon.sym.id]      
+
+      if sfImportc in inst[0].lastSon.sym.flags:
         result = m.generateId()
-        m.typeWords.addInstruction(SpvOpTypeVector, result, m.genType(t[1]), t[2].n.intVal.uint32)
-        m.types.add(t.sym.id, result)
+        if inst[0].lastSon.sym.name.s == "Vector":
+          m.typeWords.addInstruction(SpvOpTypeVector, result, m.genType(inst[1]), inst[2].n.intVal.uint32)
+        elif inst[0].lastSon.sym.name.s == "MatrixBase":
+          m.typeWords.addInstruction(SpvOpTypeMatrix, result, m.genType(inst[1]), inst[2].n.intVal.uint32)
+        # else: internalError(m.config, body.sym.loc, "Unkown intrinsic type " & $body)
 
-        # TODO: Cache with t.lastSon.sym.id
+      m.types.add(inst.lastSon.sym.id, result)
 
     of tyVar:
       return m.genType(t[0])
 
     of tyDistinct, tyAlias, tyInferred: return m.genType(t.lastSon)
-    #of tyObject:
+
+    of tyObject, tyTuple:
+      if m.types.contains(t.sym.id):
+        return m.types[t.sym.id]      
+
+      result = m.generateId()
+      var memberTypes = newSeq[SpirvId]()
+      for i, member in t.n.pairs:
+        memberTypes.add(m.genType(member.typ))
+        m.nameWords.addInstruction(SpvOpMemberName, @[result, i.uint32] & member.sym.name.s.toWords())
+      m.typeWords.addInstruction(SpvOpTypeStruct, @[result] & memberTypes)
+
+      m.types.add(t.sym.id, result)
+
     else:
       echo t.kind
       echo t
@@ -377,6 +402,7 @@ proc genIdentDefs(m: SpirvModule; n: PNode): SpirvVariable =
         case pragma.sym.name.s:
           of "input": storageClass = SpvStorageClassInput
           of "output": storageClass = SpvStorageClassOutput
+          of "uniform": storageClass = SpvStorageClassUniform
           else: discard
 
   m.variables.add(result.symbol.id, result)
@@ -524,6 +550,7 @@ proc myClose(graph: ModuleGraph; b: PPassContext, n: PNode): PNode =
     # Source
     # SourceContinued
     # Names
+  m.words.add(m.nameWords)
 #  m.words.addInstruction(SpvOpName, uint32.none, uint32.none, 2, "main".toWords)
     # MemberNames
   # Annotations
