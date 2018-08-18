@@ -21,11 +21,11 @@ type
     tw64 
 
   SpirvModuleList* = ref object of RootObj
-    modules*: seq[SpirvGen]     # list of all compiled modules
+    modules*: seq[SpirvModule]     # list of all compiled modules
     config*: ConfigRef
     graph*: ModuleGraph
 
-  SpirvGenObj = object of TPassContext
+  SpirvModuleObj = object of TPassContext
     g*: SpirvModuleList
     filename: string
     allWords: seq[uint32]
@@ -53,7 +53,7 @@ type
     trueConstant: SpirvId
     falseConstant: SpirvId
 
-  SpirvGen = ref SpirvGenObj
+  SpirvModule = ref SpirvModuleObj
 
   SpirvFunction = ref object
     symbol: PSym
@@ -70,20 +70,20 @@ type
     returnType: SpirvId
     argTypes: seq[SpirvId]
 
-template config*(m: SpirvGen): ConfigRef = m.g.config
+template config*(m: SpirvModule): ConfigRef = m.g.config
 
-proc words(m: SpirvGen): var seq[uint32] =
+proc words(m: SpirvModule): var seq[uint32] =
   if m.currentFunction != nil:
     return m.currentFunction.words
   else:
     return m.allWords 
 
-proc genNode(g: SpirvGen; n: PNode): SpirvId
+proc genNode(m: SpirvModule; n: PNode): SpirvId
 
-proc newModuleList*(g: ModuleGraph): SpirvModuleList =
-  SpirvModuleList(modules: @[], config: g.config, graph: g)
+proc newModuleList*(m: ModuleGraph): SpirvModuleList =
+  SpirvModuleList(modules: @[], config: m.config, graph: m)
 
-proc rawNewModule(g: SpirvModuleList; module: PSym, filename: string): SpirvGen =
+proc rawNewModule(g: SpirvModuleList; module: PSym, filename: string): SpirvModule =
   new(result)
   result.g = g
   result.filename = filename
@@ -99,10 +99,10 @@ proc rawNewModule(g: SpirvModuleList; module: PSym, filename: string): SpirvGen 
   # if globals == nil:
   #   globals = newGlobals()
 
-proc rawNewModule(g: SpirvModuleList; module: PSym; conf: ConfigRef): SpirvGen =
+proc rawNewModule(g: SpirvModuleList; module: PSym; conf: ConfigRef): SpirvModule =
   result = rawNewModule(g, module, toFullPath(conf, module.position.FileIndex))
   
-proc newModule(g: SpirvModuleList; module: PSym; conf: ConfigRef): SpirvGen =
+proc newModule(g: SpirvModuleList; module: PSym; conf: ConfigRef): SpirvModule =
   # we should create only one cgen module for each module sym
   result = rawNewModule(g, module, conf)
 
@@ -116,15 +116,15 @@ proc addInstruction(stream: var seq[uint32]; opCode: SpvOp; operands: varargs[ui
   stream.add(head)
   stream.add(operands)
 
-proc writeOutput(g: SpirvGen) =
-  let outFile = changeFileExt(completeCFilePath(g.config, g.filename), "spv")
+proc writeOutput(m: SpirvModule) =
+  let outFile = changeFileExt(completeCFilePath(m.config, m.filename), "spv")
 
   var file: File
   if file.open(outFile, fmWrite):
-    discard file.writeBuffer(addr g.words[0], g.words.len * sizeof(uint32))
+    discard file.writeBuffer(addr m.words[0], m.words.len * sizeof(uint32))
     file.close()
   else:
-    rawMessage(g.config, errCannotOpenFile, g.filename)
+    rawMessage(m.config, errCannotOpenFile, m.filename)
 
 proc toWords(text: string): seq[uint32] =
   newSeq(result, (text.len + 1 + 3) div 4)
@@ -133,9 +133,9 @@ proc toWords(text: string): seq[uint32] =
 
 var level = 0
 
-proc generateId(g: SpirvGen): uint32 =
-  result = g.nextId
-  inc g.nextId
+proc generateId(m: SpirvModule): uint32 =
+  result = m.nextId
+  inc m.nextId
 
 iterator procParams(typ: PType): PNode =
   for a in typ.n.sons[1..^1]:
@@ -146,17 +146,17 @@ iterator procParams(typ: PType): PNode =
 proc procParams(typ: PType): seq[PNode] =
   accumulateResult(procParams(typ))
 
-proc genVoidType(g: SpirvGen): SpirvId =
-  if g.voidType == 0:
-    g.voidType = g.generateId()
-    g.typeWords.addInstruction(SpvOpTypeVoid, g.voidType)
-  return g.voidType
+proc genVoidType(m: SpirvModule): SpirvId =
+  if m.voidType == 0:
+    m.voidType = m.generateId()
+    m.typeWords.addInstruction(SpvOpTypeVoid, m.voidType)
+  return m.voidType
 
-proc genBoolType(g: SpirvGen): SpirvId =
-  if g.boolType == 0:
-    g.voidType = g.generateId()
-    g.typeWords.addInstruction(SpvOpTypeBool, g.boolType)
-  return g.boolType
+proc genBoolType(m: SpirvModule): SpirvId =
+  if m.boolType == 0:
+    m.voidType = m.generateId()
+    m.typeWords.addInstruction(SpvOpTypeBool, m.boolType)
+  return m.boolType
 
 proc bits(size: TypeWidth): uint32 =
   case size:
@@ -165,69 +165,69 @@ proc bits(size: TypeWidth): uint32 =
     of tw32: 32
     of tw64: 64
 
-proc genIntType(g: SpirvGen; size: TypeWidth; isSigned: bool): SpirvId =
-  result = g.intTypes[size][isSigned]
+proc genIntType(m: SpirvModule; size: TypeWidth; isSigned: bool): SpirvId =
+  result = m.intTypes[size][isSigned]
   if result == 0:
-    result = g.generateId()
-    g.intTypes[size][isSigned] = result
-    g.typeWords.addInstruction(SpvOpTypeInt, result, size.bits, isSigned.uint32)
+    result = m.generateId()
+    m.intTypes[size][isSigned] = result
+    m.typeWords.addInstruction(SpvOpTypeInt, result, size.bits, isSigned.uint32)
 
-proc genFloatType(g: SpirvGen; size: TypeWidth): SpirvId =
-  result = g.floatTypes[size]
+proc genFloatType(m: SpirvModule; size: TypeWidth): SpirvId =
+  result = m.floatTypes[size]
   if result == 0:
-    result = g.generateId()
-    g.floatTypes[size] = result
-    g.typeWords.addInstruction(SpvOpTypeFloat, result, size.bits)
+    result = m.generateId()
+    m.floatTypes[size] = result
+    m.typeWords.addInstruction(SpvOpTypeFloat, result, size.bits)
   
-proc genType(g: SpirvGen; t: PType): SpirvId =
+proc genType(m: SpirvModule; t: PType): SpirvId =
 
   case t.kind:
-    of tyVoid: return g.genVoidType()
-    of tyBool: return g.genBoolType()
+    of tyVoid: return m.genVoidType()
+    of tyBool: return m.genBoolType()
 
-    #of tyFloat16: return g.genFloatType(tw16)
-    of tyFloat32, tyFloat: return g.genFloatType(tw32)
-    of tyFloat64: return g.genFloatType(tw64)
+    #of tyFloat16: return m.genFloatType(tw16)
+    of tyFloat32, tyFloat: return m.genFloatType(tw32)
+    of tyFloat64: return m.genFloatType(tw64)
     
-    of tyInt8: return g.genIntType(tw8, false)
-    of tyInt16: return g.genIntType(tw16, false)
-    of tyInt32, tyInt: return g.genIntType(tw32, false)
-    of tyInt64: return g.genIntType(tw64, false)
+    of tyInt8: return m.genIntType(tw8, false)
+    of tyInt16: return m.genIntType(tw16, false)
+    of tyInt32, tyInt: return m.genIntType(tw32, false)
+    of tyInt64: return m.genIntType(tw64, false)
 
-    of tyUInt8: return g.genIntType(tw8, true)
-    of tyUInt16: return g.genIntType(tw16, true)
-    of tyUInt32, tyUInt: return g.genIntType(tw32, true)
-    of tyUInt64: return g.genIntType(tw64, true)
+    of tyUInt8: return m.genIntType(tw8, true)
+    of tyUInt16: return m.genIntType(tw16, true)
+    of tyUInt32, tyUInt: return m.genIntType(tw32, true)
+    of tyUInt64: return m.genIntType(tw64, true)
 
     of tyGenericInst:
-      if g.types.contains(t.sym.id):
+      if m.types.contains(t.sym.id):
         echo "found ", t
-        return g.types[t.sym.id]
+        return m.types[t.sym.id]
 
       if t[0].lastSon.sym.name.s == "Vector":
-        result = g.generateId()
-        g.typeWords.addInstruction(SpvOpTypeVector, result, g.genType(t[1]), t[2].n.intVal.uint32)
-        g.types.add(t.sym.id, result)
+        result = m.generateId()
+        m.typeWords.addInstruction(SpvOpTypeVector, result, m.genType(t[1]), t[2].n.intVal.uint32)
+        m.types.add(t.sym.id, result)
 
         # TODO: Cache with t.lastSon.sym.id
 
     of tyVar:
-      return g.genType(t[0])
+      return m.genType(t[0])
 
-    of tyDistinct, tyAlias, tyInferred: return g.genType(t.lastSon)
+    of tyDistinct, tyAlias, tyInferred: return m.genType(t.lastSon)
     #of tyObject:
     else:
       echo t.kind
       echo t
 
-proc genPointerType(g: SpirvGen; valueType: SpirvId; storageClass: SpvStorageClass): SpirvId =
+proc genPointerType(m: SpirvModule; valueType: SpirvId; storageClass: SpvStorageClass): SpirvId =
   let key = (valueType, storageClass)
-  if g.pointerTypes.contains(key):
-    return g.pointerTypes[key]
+  if m.pointerTypes.contains(key):
+    return m.pointerTypes[key]
 
-  result = g.generateId()
-  g.pointerTypes.add(key, result)
-  g.typeWords.addInstruction(SpvOpTypePointer, result, storageClass.uint32, valueType)
+  result = m.generateId()
+  m.pointerTypes.add(key, result)
+  m.typeWords.addInstruction(SpvOpTypePointer, result, storageClass.uint32, valueType)
 
 func toWords(value: SomeNumber): seq[uint32] =
   const wordCount = (sizeof(value) + 3) div 4
@@ -246,68 +246,68 @@ func toWords(value: SomeNumber): seq[uint32] =
         mask = not ((1 shl bitsInLastWord) - 1).uint32 
       result[^1] = result[^1] or mask
     
-proc genConstant(g: SpirvGen; valueType: SpirvId; value: SomeInteger): SpirvId =
+proc genConstant(m: SpirvModule; valueType: SpirvId; value: SomeInteger): SpirvId =
   let key = (valueType, value.BiggestInt)
-  if g.intConstants.contains(key):
-    return g.intConstants[key]
+  if m.intConstants.contains(key):
+    return m.intConstants[key]
 
-  result = g.generateId()
-  g.intConstants.add(key, result)
-  g.constantWords.addInstruction(SpvOpConstant, @[valueType, result] & value.toWords())
+  result = m.generateId()
+  m.intConstants.add(key, result)
+  m.constantWords.addInstruction(SpvOpConstant, @[valueType, result] & value.toWords())
 
-proc genConstant(g: SpirvGen; valueType: SpirvId; value: SomeFloat): SpirvId =
+proc genConstant(m: SpirvModule; valueType: SpirvId; value: SomeFloat): SpirvId =
   let key = (valueType, value.BiggestFloat)
-  if g.floatConstants.contains(key):
-    return g.floatConstants[key]
+  if m.floatConstants.contains(key):
+    return m.floatConstants[key]
 
-  result = g.generateId()
-  g.floatConstants.add(key, result)
-  g.constantWords.addInstruction(SpvOpConstant, @[valueType, result] & value.toWords())
+  result = m.generateId()
+  m.floatConstants.add(key, result)
+  m.constantWords.addInstruction(SpvOpConstant, @[valueType, result] & value.toWords())
   
-proc genConstant(g: SpirvGen; n: PNode): SpirvId =
+proc genConstant(m: SpirvModule; n: PNode): SpirvId =
   case n.typ.kind:
-    of tyInt8: return g.genConstant(g.genType(n.typ), n.intVal.int8)
-    of tyInt16: return g.genConstant(g.genType(n.typ), n.intVal.int16)
-    of tyInt, tyInt32: return g.genConstant(g.genType(n.typ), n.intVal.int32)
-    of tyInt64: return g.genConstant(g.genType(n.typ), n.intVal.int64)
+    of tyInt8: return m.genConstant(m.genType(n.typ), n.intVal.int8)
+    of tyInt16: return m.genConstant(m.genType(n.typ), n.intVal.int16)
+    of tyInt, tyInt32: return m.genConstant(m.genType(n.typ), n.intVal.int32)
+    of tyInt64: return m.genConstant(m.genType(n.typ), n.intVal.int64)
 
-    of tyUInt8: return g.genConstant(g.genType(n.typ), n.intVal.uint8)
-    of tyUInt16: return g.genConstant(g.genType(n.typ), n.intVal.uint16)
-    of tyUInt, tyUInt32: return g.genConstant(g.genType(n.typ), n.intVal.uint32)
-    of tyUInt64: return g.genConstant(g.genType(n.typ), n.intVal.uint64)
+    of tyUInt8: return m.genConstant(m.genType(n.typ), n.intVal.uint8)
+    of tyUInt16: return m.genConstant(m.genType(n.typ), n.intVal.uint16)
+    of tyUInt, tyUInt32: return m.genConstant(m.genType(n.typ), n.intVal.uint32)
+    of tyUInt64: return m.genConstant(m.genType(n.typ), n.intVal.uint64)
 
-    of tyFloat, tyFloat32: return g.genConstant(g.genType(n.typ), n.floatVal.float32)
-    of tyFloat64: return g.genConstant(g.genType(n.typ), n.floatVal.float64)
+    of tyFloat, tyFloat32: return m.genConstant(m.genType(n.typ), n.floatVal.float32)
+    of tyFloat64: return m.genConstant(m.genType(n.typ), n.floatVal.float64)
 
     else: discard
 
-proc genBoolConstant(g: SpirvGen; value: bool): SpirvId =
-  result = if value: g.trueConstant else: g.falseConstant
+proc genBoolConstant(m: SpirvModule; value: bool): SpirvId =
+  result = if value: m.trueConstant else: m.falseConstant
   if result == 0:
-    result = g.generateId()
+    result = m.generateId()
     let op = if value: SpvOpConstantTrue else: SpvOpConstantFalse
-    if value: g.trueConstant = result
-    else: g.falseConstant = result
-    g.constantWords.addInstruction(op, result)
+    if value: m.trueConstant = result
+    else: m.falseConstant = result
+    m.constantWords.addInstruction(op, result)
 
-proc genParamType(g: SpirvGen; t: PType): SpirvId = discard
+proc genParamType(m: SpirvModule; t: PType): SpirvId = discard
 
-proc genFunctionType(g: SpirvGen; t: PType): SpirvFunctionType =
+proc genFunctionType(m: SpirvModule; t: PType): SpirvFunctionType =
 
   let returnType =
-    if t.sons[0] == nil: g.genVoidType()
-    else: g.genType(t.sons[0])
+    if t.sons[0] == nil: m.genVoidType()
+    else: m.genType(t.sons[0])
 
   var argTypes = newSeq[SpirvId]()
 
   for param in t.procParams():
     let paramType = param.sym.typ.skipTypes({ tyGenericInst, tyAlias, tySink })
-    argTypes.add(g.genParamType(paramType))
+    argTypes.add(m.genParamType(paramType))
 
     # if skipTypes(t, {tyVar}).kind in { tyOpenArray, tyVarargs }:
-    #   argTypes.add(g.intType)  # Extra length parameter
+    #   argTypes.add(m.intType)  # Extra length parameter
 
-  for knownType in g.functionTypes:
+  for knownType in m.functionTypes:
     if returnType != knownType.returnType: continue
 
     var found = true
@@ -318,42 +318,42 @@ proc genFunctionType(g: SpirvGen; t: PType): SpirvFunctionType =
       return knownType
 
   new(result)
-  result.id = g.generateId()
+  result.id = m.generateId()
   result.returnType = returnType
   result.argTypes = argTypes
-  g.functionTypes.add(result)
+  m.functionTypes.add(result)
 
-  g.typeWords.addInstruction(SpvOpTypeFunction, result.id, returnType) 
+  m.typeWords.addInstruction(SpvOpTypeFunction, result.id, returnType) 
 
-proc genFunction(g: SpirvGen; s: PSym): SpirvFunction =
+proc genFunction(m: SpirvModule; s: PSym): SpirvFunction =
   
-  if g.functions.contains(s.id):
-    return g.functions[s.id]
+  if m.functions.contains(s.id):
+    return m.functions[s.id]
 
-  let functionType = g.genFunctionType(s.typ)
+  let functionType = m.genFunctionType(s.typ)
 
   new(result)
   result.symbol = s
-  result.id = g.generateId()
-  let labelId = g.generateId()
+  result.id = m.generateId()
+  let labelId = m.generateId()
 
-  g.functions.add(s.id, result)
+  m.functions.add(s.id, result)
 
   result.words.addInstruction(SpvOpFunction, functionType.returnType, result.id, 0'u32, functionType.id)
   result.words.addInstruction(SpvOpLabel, labelId)
 
-  g.currentFunction = result
-  discard g.genNode(s.getBody())
-  g.currentFunction = nil
+  m.currentFunction = result
+  discard m.genNode(s.getBody())
+  m.currentFunction = nil
 
-  if functionType.returnType == g.genVoidType():
+  if functionType.returnType == m.genVoidType():
     result.words.addInstruction(SpvOpReturn)
   result.words.addInstruction(SpvOpFunctionEnd)  
 
-proc genIdentDefs(g: SpirvGen; n: PNode): SpirvVariable =
+proc genIdentDefs(m: SpirvModule; n: PNode): SpirvVariable =
 
   new(result)
-  result.id = g.generateId()
+  result.id = m.generateId()
 
   if n[0].kind == nkPragmaExpr:
     result.symbol = n[0][0].sym
@@ -369,9 +369,9 @@ proc genIdentDefs(g: SpirvGen; n: PNode): SpirvVariable =
     for pragma in n.sons[0][1]:
       if pragma.kind == nkExprColonExpr and pragma[0].kind == nkSym:
         case pragma[0].sym.name.s.normalize():
-          of "location": g.decorationWords.addInstruction(SpvOpDecorate, result.id, SpvDecorationLocation.uint32, pragma[1].intVal.uint32)
-          of "descriptorSet": g.decorationWords.addInstruction(SpvOpDecorate, result.id, SpvDecorationDescriptorSet.uint32, pragma[1].intVal.uint32)
-          of "binding": g.decorationWords.addInstruction(SpvOpDecorate, result.id, SpvDecorationBinding.uint32, pragma[1].intVal.uint32)
+          of "location": m.decorationWords.addInstruction(SpvOpDecorate, result.id, SpvDecorationLocation.uint32, pragma[1].intVal.uint32)
+          of "descriptorSet": m.decorationWords.addInstruction(SpvOpDecorate, result.id, SpvDecorationDescriptorSet.uint32, pragma[1].intVal.uint32)
+          of "binding": m.decorationWords.addInstruction(SpvOpDecorate, result.id, SpvDecorationBinding.uint32, pragma[1].intVal.uint32)
           else: discard
       elif pragma.kind == nkSym:
         case pragma.sym.name.s:
@@ -379,60 +379,60 @@ proc genIdentDefs(g: SpirvGen; n: PNode): SpirvVariable =
           of "output": storageClass = SpvStorageClassOutput
           else: discard
 
-  g.variables.add(result.symbol.id, result)
+  m.variables.add(result.symbol.id, result)
 
   # TODO: Cache pointer type
   let 
-    variableType = g.genType(result.symbol.typ)
-    pointerType = g.genPointerType(variableType, storageClass)
+    variableType = m.genType(result.symbol.typ)
+    pointerType = m.genPointerType(variableType, storageClass)
 
   # TODO: Initializer
   result.words.addInstruction(SpvOpVariable, pointerType, result.id, storageClass.uint32)
 
-proc genSons(g: SpirvGen; n: PNode) =
-  for s in n: discard g.genNode(s)
+proc genSons(m: SpirvModule; n: PNode) =
+  for s in n: discard m.genNode(s)
 
-proc genNode(g: SpirvGen; n: PNode): SpirvId =
+proc genNode(m: SpirvModule; n: PNode): SpirvId =
 
-  if sfMainModule notin g.module.flags:
+  if sfMainModule notin m.module.flags:
     return
 
   case n.kind:
     of nkEmpty: discard
 
     # TODO: Interpret as expected type, if it's used in an expression, so no cast is necessary
-    of nkIntLit .. nkFloat128Lit: return g.genConstant(n)
+    of nkIntLit .. nkFloat128Lit: return m.genConstant(n)
 
     of nkHiddenAddr:
-      return g.genNode(n[0])
+      return m.genNode(n[0])
 
     of nkSym:
-      if g.variables.contains(n.sym.id):
-        return g.variables[n.sym.id].id
+      if m.variables.contains(n.sym.id):
+        return m.variables[n.sym.id].id
 
     of nkCallKinds:
 
       if n[0].sym.name.s == "[]=":
         let
-          base = g.genNode(n[1])
-          left = g.generateId()
-          leftType = g.genType(n[3].typ)
+          base = m.genNode(n[1])
+          left = m.generateId()
+          leftType = m.genType(n[3].typ)
 
-        g.words.addInstruction(SpvOpAccessChain, g.genPointerType(leftType, SpvStorageClassOutput), left, base, g.genNode(n[2]))
-        g.words.addInstruction(SpvOpStore, left, g.genNode(n[3]))
+        m.words.addInstruction(SpvOpAccessChain, m.genPointerType(leftType, SpvStorageClassOutput), left, base, m.genNode(n[2]))
+        m.words.addInstruction(SpvOpStore, left, m.genNode(n[3]))
 
       elif n[0].sym.name.s == "[]":
         let
-          base = g.genNode(n[1])
-          temp = g.generateId()
-          resultType = g.genType(n.typ)
-        result = g.generateId()
+          base = m.genNode(n[1])
+          temp = m.generateId()
+          resultType = m.genType(n.typ)
+        result = m.generateId()
 
-        g.words.addInstruction(SpvOpAccessChain, g.genPointerType(resultType, SpvStorageClassInput), temp, base, g.genNode(n[2]))
-        g.words.addInstruction(SpvOpLoad, resultType, result, temp)
+        m.words.addInstruction(SpvOpAccessChain, m.genPointerType(resultType, SpvStorageClassInput), temp, base, m.genNode(n[2]))
+        m.words.addInstruction(SpvOpLoad, resultType, result, temp)
 
-    #of nkIdentDefs: discard g.genIdentDefs(n)
-    of nkProcDef, nkFuncDef, nkMethodDef, nkIteratorDef, nkConverterDef: #g.genProcDef(n)
+    #of nkIdentDefs: discard m.genIdentDefs(n)
+    of nkProcDef, nkFuncDef, nkMethodDef, nkIteratorDef, nkConverterDef: #m.genProcDef(n)
 
       let s = n.sons[namePos].sym
       if sfImportc in s.flags:
@@ -457,36 +457,36 @@ proc genNode(g: SpirvGen; n: PNode): SpirvId =
           executionModels.incl(executionModel)
       
       if executionModels != {}:
-        let function = g.genFunction(s)
+        let function = m.genFunction(s)
         for executionModel in executionModels:
-          g.entryPoints.add((function, executionModel))
+          m.entryPoints.add((function, executionModel))
 
-    of nkVarSection, nkLetSection, nkConstSection: #g.genSons(n)
+    of nkVarSection, nkLetSection, nkConstSection: #m.genSons(n)
       for child in n.sons:
-        discard g.genIdentDefs(child)
+        discard m.genIdentDefs(child)
       discard
-    of nkStmtList: g.genSons(n)
+    of nkStmtList: m.genSons(n)
 
     else: discard # internalError(n.info, "Unhandled node: " & $n)
 
 proc myProcess(b: PPassContext, n: PNode): PNode =
   result = n
   if b == nil: return
-  var m = SpirvGen(b)
+  var m = SpirvModule(b)
   if passes.skipCodegen(m.config, n): return
   
   discard m.genNode(n)
   # var p = newProc(globals, m, nil, m.module.options)
   # p.unique = globals.unique
   # genModule(p, n)
-  # add(p.g.code, p.locals)
-  # add(p.g.code, p.body)
+  # add(p.m.code, p.locals)
+  # add(p.m.code, p.body)
 
 proc myClose(graph: ModuleGraph; b: PPassContext, n: PNode): PNode =
   
   result = n
   if b == nil: return
-  var m = SpirvGen(b)
+  var m = SpirvModule(b)
   if passes.skipCodegen(m.config, n): return
 
   let glslId = m.generateId()
@@ -567,7 +567,6 @@ proc myClose(graph: ModuleGraph; b: PPassContext, n: PNode): PNode =
   #   discard writeRopeIfNotEqual(genHeader() & code, outfile)
   #   for obj, content in items(globals.classes):
   #     genClass(obj, content, ext)
-
 
 template injectG() {.dirty.} =
   if graph.backend == nil:
