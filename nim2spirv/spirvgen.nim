@@ -46,6 +46,7 @@ type
     intTypes: array[TypeWidth, array[bool, SpirvId]]
     floatTypes: array[TypeWidth, SpirvId]
     pointerTypes: Table[(SpirvId, SpvStorageClass), SpirvId]
+    types: Table[int, SpirvId]
 
     intConstants: Table[(SpirvId, BiggestInt), SpirvId]
     floatConstants: Table[(SpirvId, BiggestFloat), SpirvId]
@@ -91,6 +92,7 @@ proc rawNewModule(g: SpirvModuleList; module: PSym, filename: string): SpirvGen 
   result.functions = initTable[int, SpirvFunction]()
   result.variables = initTable[int, SpirvVariable]()
   result.pointerTypes = initTable[(SpirvId, SpvStorageClass), SpirvId]()
+  result.types = initTable[int, SpirvId]()
   result.intConstants = initTable[(SpirvId, BiggestInt), SpirvId]()
   result.floatConstants = initTable[(SpirvId, BiggestFloat), SpirvId]()
   # result.sigConflicts = initCountTable[SigHash]()
@@ -198,10 +200,14 @@ proc genType(g: SpirvGen; t: PType): SpirvId =
     of tyUInt64: return g.genIntType(tw64, true)
 
     of tyGenericInst:
+      if g.types.contains(t.sym.id):
+        echo "found ", t
+        return g.types[t.sym.id]
+
       if t[0].lastSon.sym.name.s == "Vector":
-        let id = g.generateId()
-        g.typeWords.addInstruction(SpvOpTypeVector, id, g.genType(t[1]), t[2].n.intVal.uint32)
-        return id
+        result = g.generateId()
+        g.typeWords.addInstruction(SpvOpTypeVector, result, g.genType(t[1]), t[2].n.intVal.uint32)
+        g.types.add(t.sym.id, result)
 
         # TODO: Cache with t.lastSon.sym.id
 
@@ -375,7 +381,7 @@ proc genNode(g: SpirvGen; n: PNode): SpirvId =
         let
           base = g.genNode(n[1])
           left = g.generateId()
-          leftType = g.genType(n[1].typ)
+          leftType = g.genType(n[3].typ)
 
         g.words.addInstruction(SpvOpAccessChain, g.genPointerType(leftType, SpvStorageClassOutput), left, base, g.genNode(n[2]))
         g.words.addInstruction(SpvOpStore, left, g.genNode(n[3]))
