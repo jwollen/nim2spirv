@@ -1,6 +1,7 @@
 const
   SpvMagicNumber* = 0x07230203
-  SpvVersion* = 0x00010200
+  #SpvVersion* = 0x00010200
+  SpvVersion* = 0x00010000
   SpvRevision* = 2
   SpvOpCodeMask* = 0xffff
   SpvWordCountShift* = 16
