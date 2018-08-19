@@ -1,5 +1,5 @@
 import
-  strutils, hashes, std / sha1, os, tables,
+  strutils, hashes, std / sha1, os, tables, sets,
   times, math, intsets, options as opt
 
 import ../compiler/[
@@ -47,7 +47,7 @@ type
     intTypes: array[TypeWidth, array[bool, SpirvId]]
     floatTypes: array[TypeWidth, SpirvId]
     pointerTypes: Table[(SpirvId, SpvStorageClass), SpirvId]
-    types: Table[int, SpirvId]
+    types: seq[(PType, SpirvId)]
 
     intConstants: Table[(SpirvId, BiggestInt), SpirvId]
     floatConstants: Table[(SpirvId, BiggestFloat), SpirvId]
@@ -60,16 +60,21 @@ type
     symbol: PSym
     id: SpirvId
     words: seq[uint32]
+    usedVariables: HashSet[SpirvVariable]
 
   SpirvVariable = ref object
     symbol: PSym
     id: SpirvId
     words: seq[uint32]
+    storageClass: SpvStorageClass
 
   SpirvFunctionType = ref object
     id: SpirvId
     returnType: SpirvId
     argTypes: seq[SpirvId]
+
+proc hash(v: SpirvVariable): Hash =
+  hash(v.id)
 
 template config*(m: SpirvModule): ConfigRef = m.g.config
 
@@ -93,7 +98,6 @@ proc rawNewModule(g: SpirvModuleList; module: PSym, filename: string): SpirvModu
   result.functions = initTable[int, SpirvFunction]()
   result.variables = initTable[int, SpirvVariable]()
   result.pointerTypes = initTable[(SpirvId, SpvStorageClass), SpirvId]()
-  result.types = initTable[int, SpirvId]()
   result.intConstants = initTable[(SpirvId, BiggestInt), SpirvId]()
   result.floatConstants = initTable[(SpirvId, BiggestFloat), SpirvId]()
   # result.sigConflicts = initCountTable[SigHash]()
@@ -119,6 +123,7 @@ proc addInstruction(stream: var seq[uint32]; opCode: SpvOp; operands: varargs[ui
 
 proc writeOutput(m: SpirvModule) =
   let outFile = changeFileExt(completeCFilePath(m.config, m.filename), "spv")
+  echo outFile
 
   var file: File
   if file.open(outFile, fmWrite):
@@ -201,17 +206,15 @@ proc genType(m: SpirvModule; t: PType): SpirvId =
     of tyUInt64: return m.genIntType(tw64, true)
 
     of tyGenericInst:
-
       # The last child is concrete, unless this is an alias.
       # Then it's another generic inst.
       var inst = t
       if inst.lastSon.kind == tyGenericInst:
         inst = inst.lastSon
 
-      # Use the concrete type's symbol for caching.
-      # The generic inst might not have one.
-      if m.types.contains(inst.lastSon.sym.id):
-        return m.types[inst.lastSon.sym.id]      
+      for x in m.types:
+        if sameType(t, x[0]):
+          return x[1]
 
       if sfImportc in inst[0].lastSon.sym.flags:
         result = m.generateId()
@@ -221,7 +224,7 @@ proc genType(m: SpirvModule; t: PType): SpirvId =
           m.typeWords.addInstruction(SpvOpTypeMatrix, result, m.genType(inst[1]), inst[2].n.intVal.uint32)
         # else: internalError(m.config, body.sym.loc, "Unkown intrinsic type " & $body)
 
-      m.types.add(inst.lastSon.sym.id, result)
+      m.types.add((t, result))
 
     of tyVar:
       return m.genType(t[0])
@@ -229,8 +232,9 @@ proc genType(m: SpirvModule; t: PType): SpirvId =
     of tyDistinct, tyAlias, tyInferred: return m.genType(t.lastSon)
 
     of tyObject, tyTuple:
-      if m.types.contains(t.sym.id):
-        return m.types[t.sym.id]      
+      for a in m.types:
+        if sameType(a[0], t):
+          return a[1]
 
       result = m.generateId()
       var memberTypes = newSeq[SpirvId]()
@@ -239,11 +243,10 @@ proc genType(m: SpirvModule; t: PType): SpirvId =
         m.nameWords.addInstruction(SpvOpMemberName, @[result, i.uint32] & member.sym.name.s.toWords())
       m.typeWords.addInstruction(SpvOpTypeStruct, @[result] & memberTypes)
 
-      m.types.add(t.sym.id, result)
+      m.types.add((t, result))
 
     else:
-      echo t.kind
-      echo t
+      discard
 
 proc genPointerType(m: SpirvModule; valueType: SpirvId; storageClass: SpvStorageClass): SpirvId =
   let key = (valueType, storageClass)
@@ -358,6 +361,7 @@ proc genFunction(m: SpirvModule; s: PSym): SpirvFunction =
   let functionType = m.genFunctionType(s.typ)
 
   new(result)
+  result.usedVariables = initSet[SpirvVariable]()
   result.symbol = s
   result.id = m.generateId()
   let labelId = m.generateId()
@@ -385,9 +389,10 @@ proc genIdentDefs(m: SpirvModule; n: PNode): SpirvVariable =
   else:
     result.symbol = n[0].sym
 
-  var storageClass = SpvStorageClassFunction
-  if result.symbol.flags.contains(sfGlobal):
-    storageClass = SpvStorageClassPrivate
+  if result.symbol.flags.contains(sfGlobal) or m.currentFunction == nil:
+    result.storageClass = SpvStorageClassPrivate
+  else:
+    result.storageClass = SpvStorageClassFunction
 
   if n[0].kind == nkPragmaExpr:
     
@@ -395,25 +400,30 @@ proc genIdentDefs(m: SpirvModule; n: PNode): SpirvVariable =
       if pragma.kind == nkExprColonExpr and pragma[0].kind == nkSym:
         case pragma[0].sym.name.s.normalize():
           of "location": m.decorationWords.addInstruction(SpvOpDecorate, result.id, SpvDecorationLocation.uint32, pragma[1].intVal.uint32)
-          of "descriptorSet": m.decorationWords.addInstruction(SpvOpDecorate, result.id, SpvDecorationDescriptorSet.uint32, pragma[1].intVal.uint32)
+          of "descriptorset": m.decorationWords.addInstruction(SpvOpDecorate, result.id, SpvDecorationDescriptorSet.uint32, pragma[1].intVal.uint32)
           of "binding": m.decorationWords.addInstruction(SpvOpDecorate, result.id, SpvDecorationBinding.uint32, pragma[1].intVal.uint32)
+          of "builtin":
+            var builtIn: SpvBuiltIn
+            case pragma[1].ident.s.normalize():
+              of "position": builtIn = SpvBuiltInPosition 
+              else: discard
+            m.decorationWords.addInstruction(SpvOpDecorate, result.id, SpvDecorationBuiltIn.uint32, builtIn.uint32)
           else: discard
       elif pragma.kind == nkSym:
         case pragma.sym.name.s:
-          of "input": storageClass = SpvStorageClassInput
-          of "output": storageClass = SpvStorageClassOutput
-          of "uniform": storageClass = SpvStorageClassUniform
+          of "input": result.storageClass = SpvStorageClassInput
+          of "output": result.storageClass = SpvStorageClassOutput
+          of "uniform": result.storageClass = SpvStorageClassUniform
           else: discard
 
   m.variables.add(result.symbol.id, result)
 
-  # TODO: Cache pointer type
   let 
     variableType = m.genType(result.symbol.typ)
-    pointerType = m.genPointerType(variableType, storageClass)
+    pointerType = m.genPointerType(variableType, result.storageClass)
 
   # TODO: Initializer
-  result.words.addInstruction(SpvOpVariable, pointerType, result.id, storageClass.uint32)
+  result.words.addInstruction(SpvOpVariable, pointerType, result.id, result.storageClass.uint32)
 
 proc genSons(m: SpirvModule; n: PNode) =
   for s in n: discard m.genNode(s)
@@ -434,7 +444,14 @@ proc genNode(m: SpirvModule; n: PNode): SpirvId =
 
     of nkSym:
       if m.variables.contains(n.sym.id):
-        return m.variables[n.sym.id].id
+        let variable = m.variables[n.sym.id]
+        m.currentFunction.usedVariables.incl(variable)
+        return variable.id
+
+    of nkAsgn:
+      let temp = m.generateId()
+      m.words.addInstruction(SpvOpLoad, m.genType(n[1].typ), temp, m.genNode(n[1]))
+      m.words.addInstruction(SpvOpStore, m.genNode(n[0]), temp)
 
     of nkCallKinds:
 
@@ -540,7 +557,18 @@ proc myClose(graph: ModuleGraph; b: PPassContext, n: PNode): PNode =
 
   # EntryPoint
   for entryPoint in m.entryPoints:
-    m.words.addInstruction(SpvOpEntryPoint, @[ord(entryPoint.executionModel).uint32, entryPoint.function.id] & entryPoint.function.symbol.name.s.toWords)
+    
+    # Collect the entry point's interface: referenced input/output variables (or a superset)
+    # TODO: Include invoked functions too!
+    var iface = newSeq[SpirvId]()
+    for usedVariable in entryPoint.function.usedVariables:
+      if usedVariable.storageClass in { SpvStorageClassInput, SpvStorageClassOutput }:
+        iface.add(usedVariable.id)
+        
+    m.words.addInstruction(SpvOpEntryPoint,
+      @[ord(entryPoint.executionModel).uint32, entryPoint.function.id] &
+      entryPoint.function.symbol.name.s.toWords &
+      iface)
 
   # ExecutionMode
 

@@ -9,7 +9,7 @@ type
     Compute
     #Kernel
 
-  Builtin* = enum
+  BuiltIn* = enum
     Position
     VertexId
     InstanceId
@@ -32,7 +32,7 @@ func `[]`*(self: Vector; index: int): Vector.T {.importc.}
 func `[]=`*(self: var Vector; index: int; value: Vector.T) {.importc.}
 
 template stage*(ShaderStage) {.pragma.}
-template builtin*(Builtin) {.pragma.}
+template builtIn*(BuiltIn) {.pragma.}
 template location*(int) {.pragma.}
 template binding*(int) {.pragma.}
 template descriptorSet*(int) {.pragma.}
@@ -46,12 +46,21 @@ type
     worldViewProjection: Matrix4x4
 
 var
-  data {.uniform, descriptorSet: 0, binding: 0.}: Data
+  #data {.uniform, descriptorSet: 0, binding: 0.}: Data
+  position {.input, location: 0.}: Vector4
+  normal {.input, location: 1.}: Vector3
+  texCoordVIn {.input, location: 0.}: Vector2
+  texCoordVOut {.output, location: 0.}: Vector2
+  position0 {.output, builtIn: Position.}: Vector4
+
   texCoord {.input, location: 0.}: Vector2
   color {.output, location: 0.}: Vector4
 
 proc vertexShader() {.stage: Vertex.} =
-  discard
+  # gl_Position = data.worldViewProjection * vec4(position, 1.0);
+  # gl_Position.y = -gl_Position.y;
+  #position = 
+  texCoordVOut = texCoordVIn
 
 proc main() {.stage: Fragment.} =
   color[0] = texCoord[0]
