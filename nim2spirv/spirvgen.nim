@@ -465,7 +465,17 @@ proc genNode(m: SpirvModule; n: PNode): SpirvId =
 
     of nkCallKinds:
 
-      if n[0].sym.name.s == "[]=":
+      if sfImportc notin n[0].sym.flags:
+        discard # TODO: Handle magic and user functions
+
+      if n[0].sym.magic != mNone:
+        case n[0].sym.magic:
+          of mUnaryMinusF64:
+            result = m.generateId()
+            m.words.addInstruction(SpvOpFNegate, m.genType(n.typ), result, m.genNode(n[1]))
+          else: discard
+
+      elif n[0].sym.name.s == "[]=":
         let
           base = m.genNode(n[1])
           left = m.generateId()
@@ -483,6 +493,24 @@ proc genNode(m: SpirvModule; n: PNode): SpirvId =
 
         m.words.addInstruction(SpvOpAccessChain, m.genPointerType(resultType, SpvStorageClassInput), temp, base, m.genNode(n[2]))
         m.words.addInstruction(SpvOpLoad, resultType, result, temp)
+
+      else:
+        var op: SpvOp
+        case $n[0].sym.loc.r:
+          of "OpCompositeConstruct": op = SpvOpCompositeConstruct
+
+          of "OpVectorTimesScalar": op = SpvOpVectorTimesScalar
+          of "OpMatrixTimesScalar": op = SpvOpMatrixTimesScalar
+          of "OpMatrixTimesVector": op = SpvOpMatrixTimesVector
+          of "OpVectorTimesMatrix": op = SpvOpVectorTimesMatrix
+          of "OpMatrixTimesMatrix": op = SpvOpMatrixTimesMatrix 
+          else: discard
+
+        result = m.generateId()
+        var args: seq[SpirvId]
+        for i in 1 ..< n.sonsLen:
+          args.add(m.genNode(n[i]))   
+        m.words.addInstruction(op, @[m.genType(n.typ), result] & args)
 
     #of nkIdentDefs: discard m.genIdentDefs(n)
     of nkProcDef, nkFuncDef, nkMethodDef, nkIteratorDef, nkConverterDef: #m.genProcDef(n)

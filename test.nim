@@ -15,6 +15,8 @@ type
     InstanceId
     PrimitiveId
 
+  float16* {.importc: "float16".} = object
+
   Vector* {.importc.} [T; size: static[int]] = object
 
   MatrixBase* {.importc.} [T; width: static[int]] = object
@@ -30,6 +32,15 @@ type
 
 func `[]`*(self: Vector; index: int): Vector.T {.importc.}
 func `[]=`*(self: var Vector; index: int; value: Vector.T) {.importc.}
+func `-`*(self: Vector): Vector {.importc: "OpFNegate".}
+
+func construct*[T](args: varargs[typed]): T {.importc: "OpCompositeConstruct".}
+
+func `*`*[T; size: static[int]](left: Vector[T, size]; right: T): Vector[T, size] {.importc: "OpVectorTimesScalar".}
+func `*`*[T; height, width: static[int]](left: Matrix[T, height, width]; right: T): Matrix[T, height, width] {.importc: "OpMatrixTimesScalar".}
+func `*`*[T; height, width: static[int]](left: Matrix[T, height, width]; right: Vector[T, width]): Vector[T, width] {.importc: "OpMatrixTimesVector".}
+func `*`*[T; height, width: static[int]](left: Vector[T, height]; right: Matrix[T, height, width]): Vector[T, height] {.importc: "OpVectorTimesMatrix".}
+func `*`*[T; height, width, size: static[int]](left: Matrix[T, height, size]; right: Matrix[T, size, width]): Matrix[T, height, width] {.importc: "OpMatrixTimesMatrix".}
 
 template stage*(ShaderStage) {.pragma.}
 template builtIn*(BuiltIn) {.pragma.}
@@ -60,7 +71,7 @@ var
 proc vertexShader() {.stage: Vertex.} =
   # gl_Position = data.worldViewProjection * vec4(position, 1.0);
   # gl_Position.y = -gl_Position.y;
-  #position = 
+  position[2] = -position[2] 
   texCoordVOut = texCoordVIn
 
 proc main() {.stage: Fragment.} =
