@@ -241,6 +241,16 @@ proc genType(m: SpirvModule; t: PType): SpirvId =
       for i, member in t.n.pairs:
         memberTypes.add(m.genType(member.typ))
         m.nameWords.addInstruction(SpvOpMemberName, @[result, i.uint32] & member.sym.name.s.toWords())
+
+        m.decorationWords.addInstruction(SpvOpDecorate, result, SpvDecorationBlock.uint32)
+
+        # TODO: Only when used in uniforms
+        m.decorationWords.addInstruction(SpvOpMemberDecorate, result, i.uint32, SpvDecorationOffset.uint32, member.sym.offset.uint32)
+        if ($member.typ).startsWith("Matrix"):
+          # TODO: Handle row major
+          m.decorationWords.addInstruction(SpvOpMemberDecorate, result, i.uint32, SpvDecorationColMajor.uint32)
+          m.decorationWords.addInstruction(SpvOpMemberDecorate, result, i.uint32, SpvDecorationMatrixStride.uint32, 16'u32)
+
       m.typeWords.addInstruction(SpvOpTypeStruct, @[result] & memberTypes)
 
       m.types.add((t, result))
@@ -571,6 +581,9 @@ proc myClose(graph: ModuleGraph; b: PPassContext, n: PNode): PNode =
       iface)
 
   # ExecutionMode
+  for entryPoint in m.entryPoints:
+    if entryPoint.executionModel == SpvExecutionModelFragment:
+      m.words.addInstruction(SpvOpExecutionMode, entryPoint.function.id, SpvExecutionModeOriginUpperLeft.uint32)
 
   # Debug instructions
     # Strings

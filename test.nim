@@ -46,7 +46,8 @@ type
     worldViewProjection: Matrix4x4
 
 var
-  #data {.uniform, descriptorSet: 0, binding: 0.}: Data
+  data {.uniform, descriptorSet: 0, binding: 0.}: Data
+
   position {.input, location: 0.}: Vector4
   normal {.input, location: 1.}: Vector3
   texCoordVIn {.input, location: 0.}: Vector2
