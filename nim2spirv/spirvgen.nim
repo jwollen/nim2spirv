@@ -123,7 +123,6 @@ proc addInstruction(stream: var seq[uint32]; opCode: SpvOp; operands: varargs[ui
 
 proc writeOutput(m: SpirvModule) =
   let outFile = changeFileExt(completeCFilePath(m.config, m.filename), "spv")
-  echo outFile
 
   var file: File
   if file.open(outFile, fmWrite):
@@ -468,6 +467,20 @@ proc genNode(m: SpirvModule; n: PNode, load: bool = false): SpirvId =
 
     of nkAsgn:
       m.words.addInstruction(SpvOpStore, m.genNode(n[0]), m.genNode(n[1], true))
+
+    of nkDotExpr:
+      let
+        temp = m.generateId()
+        resultType = m.genType(n.typ)
+      result = m.generateId()
+
+      # TODO: Generate proper access chain for non-variables
+      let variable = m.variables[n[0].sym.id]
+      m.currentFunction.usedVariables.incl(variable)
+
+      m.words.addInstruction(SpvOpAccessChain, m.genPointerType(resultType, variable.storageClass), temp, variable.id,
+        m.genConstant(m.genType(getSysType(m.g.graph, unknownLineInfo(), tyUint32)), n[1].sym.position.uint32))
+      m.words.addInstruction(SpvOpLoad, resultType, result, temp)
 
     of nkCallKinds:
 

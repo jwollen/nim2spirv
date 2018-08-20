@@ -34,7 +34,7 @@ func `[]`*(self: Vector; index: int): Vector.T {.importc.}
 func `[]=`*(self: var Vector; index: int; value: Vector.T) {.importc.}
 func `-`*(self: Vector): Vector {.importc: "OpFNegate".}
 
-func construct*[T](args: varargs[typed]): T {.importc: "OpCompositeConstruct".}
+func construct*[T](): T {.varargs, importc: "OpCompositeConstruct".}
 
 func `*`*[T; size: static[int]](left: Vector[T, size]; right: T): Vector[T, size] {.importc: "OpVectorTimesScalar".}
 func `*`*[T; height, width: static[int]](left: Matrix[T, height, width]; right: T): Matrix[T, height, width] {.importc: "OpMatrixTimesScalar".}
@@ -61,20 +61,21 @@ var
 
   position {.input, location: 0.}: Vector4
   normal {.input, location: 1.}: Vector3
-  texCoordVIn {.input, location: 0.}: Vector2
+  texCoordVIn {.input, location: 2.}: Vector2
   texCoordVOut {.output, location: 0.}: Vector2
   position0 {.output, builtIn: Position.}: Vector4
 
   texCoord {.input, location: 0.}: Vector2
   color {.output, location: 0.}: Vector4
 
-proc vertexShader() {.stage: Vertex.} =
+proc vsMain() {.stage: Vertex.} =
   # gl_Position = data.worldViewProjection * vec4(position, 1.0);
   # gl_Position.y = -gl_Position.y;
-  position0[2] = -position0[2] 
+  position0 = data.worldViewProjection * construct[Vector4](position[0], position[1], position[2], 1.0'f32)
+  position0[1] = -position0[1] 
   texCoordVOut = texCoordVIn
 
-proc main() {.stage: Fragment.} =
+proc fsMain() {.stage: Fragment.} =
   color[0] = texCoord[0]
   color[1] = texCoord[1]
   color[2] = 0.0'f32
