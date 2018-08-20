@@ -84,7 +84,7 @@ proc words(m: SpirvModule): var seq[uint32] =
   else:
     return m.allWords 
 
-proc genNode(m: SpirvModule; n: PNode): SpirvId
+proc genNode(m: SpirvModule; n: PNode; load: bool = false): SpirvId
 
 proc newModuleList*(m: ModuleGraph): SpirvModuleList =
   SpirvModuleList(modules: @[], config: m.config, graph: m)
@@ -438,7 +438,7 @@ proc genIdentDefs(m: SpirvModule; n: PNode): SpirvVariable =
 proc genSons(m: SpirvModule; n: PNode) =
   for s in n: discard m.genNode(s)
 
-proc genNode(m: SpirvModule; n: PNode): SpirvId =
+proc genNode(m: SpirvModule; n: PNode, load: bool = false): SpirvId =
 
   if sfMainModule notin m.module.flags:
     return
@@ -456,12 +456,18 @@ proc genNode(m: SpirvModule; n: PNode): SpirvId =
       if m.variables.contains(n.sym.id):
         let variable = m.variables[n.sym.id]
         m.currentFunction.usedVariables.incl(variable)
-        return variable.id
+
+        if load:
+          result = m.generateId()
+          let resultType = m.genType(n.typ)
+          m.words.addInstruction(SpvOpLoad, resultType, result, variable.id)
+        else:
+          return variable.id
+      else:
+        discard # TODO: Error, unknown symbol
 
     of nkAsgn:
-      let temp = m.generateId()
-      m.words.addInstruction(SpvOpLoad, m.genType(n[1].typ), temp, m.genNode(n[1]))
-      m.words.addInstruction(SpvOpStore, m.genNode(n[0]), temp)
+      m.words.addInstruction(SpvOpStore, m.genNode(n[0]), m.genNode(n[1], true))
 
     of nkCallKinds:
 
@@ -477,21 +483,27 @@ proc genNode(m: SpirvModule; n: PNode): SpirvId =
 
       elif n[0].sym.name.s == "[]=":
         let
-          base = m.genNode(n[1])
           left = m.generateId()
           leftType = m.genType(n[3].typ)
 
-        m.words.addInstruction(SpvOpAccessChain, m.genPointerType(leftType, SpvStorageClassOutput), left, base, m.genNode(n[2]))
+        # TODO: Generate proper access chain for non-variables
+        let variable = m.variables[n[1].skipHidden() .sym.id]
+        m.currentFunction.usedVariables.incl(variable)
+
+        m.words.addInstruction(SpvOpAccessChain, m.genPointerType(leftType, variable.storageClass), left, variable.id, m.genNode(n[2]))
         m.words.addInstruction(SpvOpStore, left, m.genNode(n[3]))
 
       elif n[0].sym.name.s == "[]":
         let
-          base = m.genNode(n[1])
           temp = m.generateId()
           resultType = m.genType(n.typ)
         result = m.generateId()
 
-        m.words.addInstruction(SpvOpAccessChain, m.genPointerType(resultType, SpvStorageClassInput), temp, base, m.genNode(n[2]))
+        # TODO: Generate proper access chain for non-variables
+        let variable = m.variables[n[1].sym.id]
+        m.currentFunction.usedVariables.incl(variable)
+
+        m.words.addInstruction(SpvOpAccessChain, m.genPointerType(resultType, variable.storageClass), temp, variable.id, m.genNode(n[2]))
         m.words.addInstruction(SpvOpLoad, resultType, result, temp)
 
       else:
@@ -509,7 +521,7 @@ proc genNode(m: SpirvModule; n: PNode): SpirvId =
         result = m.generateId()
         var args: seq[SpirvId]
         for i in 1 ..< n.sonsLen:
-          args.add(m.genNode(n[i]))   
+          args.add(m.genNode(n[i], true))   
         m.words.addInstruction(op, @[m.genType(n.typ), result] & args)
 
     #of nkIdentDefs: discard m.genIdentDefs(n)

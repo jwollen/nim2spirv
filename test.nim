@@ -71,7 +71,7 @@ var
 proc vertexShader() {.stage: Vertex.} =
   # gl_Position = data.worldViewProjection * vec4(position, 1.0);
   # gl_Position.y = -gl_Position.y;
-  position[2] = -position[2] 
+  position0[2] = -position0[2] 
   texCoordVOut = texCoordVIn
 
 proc main() {.stage: Fragment.} =
