@@ -434,6 +434,143 @@ proc genIdentDefs(m: SpirvModule; n: PNode): SpirvVariable =
   # TODO: Initializer
   result.words.addInstruction(SpvOpVariable, pointerType, result.id, result.storageClass.uint32)
 
+proc genIntrinsic(m: SpirvModule; op: SpvOp; n: PNode): SpirvId =
+  result = m.generateId()
+  var args: seq[SpirvId]
+  for i in 1 ..< n.sonsLen:
+    args.add(m.genNode(n[i], true))
+  m.words.addInstruction(op, @[m.genType(n.typ), result] & args)
+
+proc genMagic(m: SpirvModule; n: PNode): SpirvId =
+  var op: SpvOp
+  case n[0].sym.magic:
+    # of mHigh: result = m.genMagicHigh(n)
+    # of mSizeOf: result = m.genMagicSizeOf(n)
+    # of mOf: result = m.genMagicOf(n)
+    # of mEcho: m.genMagicEcho(n)
+    # of mUnaryLt: result = m.genMagicUnaryLt(n)
+    # of mInc: m.genIntrinsic()
+    # of mDec: m.genIntrinsic()
+    # of mOrd: result = m.genMagicOrd(n)
+    # of mNew: m.genMagicNew(n)
+    # of mNewFinalize: m.genMagicNewFinalize(n)
+    # of mNewSeq: m.genMagicNewSeq(n)
+    # of mNewSeqOfCap: result = m.genMagicNewSeqOfCap(n)
+    # of mLengthOpenArray: result = m.genMagicLength(n)
+    # of mLengthStr: result = m.genMagicLength(n)
+    # of mLengthArray: result = m.genMagicLength(n)
+    # of mLengthSeq: result = m.genMagicLength(n)
+    # of mXLenStr, mXLenSeq: result = m.genMagicXLen(n)
+    # of mIncl: m.genMagicIncl(n)
+    # of mExcl: m.genMagicExcl(n)
+    # of mCard: result = m.genMagicCard(n)
+    # of mChr: result = m.genMagicChr(n)
+    # of mGCref: m.genMagicGCref(n)
+    # of mGCunref: m.genMagicGCunref(n)
+    of mAddI: op = SpvOpIAdd
+    of mSubI: op = SpvOpIAdd
+    of mMulI: op = SpvOpIMul
+    of mDivI: op = SpvOpSDiv
+    of mModI: op = SpvOpSMod
+    # of mSucc: result = m.genMagicBinOp(n, llvm.Add)
+    # of mPred: result = m.genMagicBinOp(n, llvm.Sub)
+    of mAddF64: op = SpvOpFAdd
+    of mSubF64: op = SpvOpFSub
+    of mMulF64: op = SpvOpFMul
+    of mDivF64: op = SpvOpFDiv
+    of mShrI: op = SpvOpShiftRightLogical
+    of mShlI: op = SpvOpShiftLeftLogical
+    of mBitandI: op = SpvOpBitwiseAnd
+    of mBitorI: op = SpvOpBitwiseOr
+    of mBitxorI: op = SpvOpBitwiseXor
+    # of mMinI: op = SpvOpIMin # sign
+    # of mMaxI: op = SpvOpIMax # sign
+    # of mMinF64: op = SpvOpFMin
+    # of mMaxF64: result = m.genIntrinsicF(SpvOpFMax
+    of mAddU: op = SpvOpIAdd
+    of mSubU: op = SpvOpISub
+    of mMulU: op = SpvOpIMul
+    of mDivU: op = SpvOpUDiv
+    of mModU: op = SpvOpUMod
+    of mEqI: op = SpvOpIEqual
+    of mLeI: op = SpvOpSLessThanEqual
+    of mLtI: op = SpvOpSLessThan
+    of mEqF64: op = SpvOpFOrdEqual
+    of mLeF64: op = SpvOpFOrdLessThanEqual
+    of mLtF64: op = SpvOpFOrdLessThan
+    of mLeU: op = SpvOpULessThanEqual
+    of mLtU: op = SpvOpSLessThan
+    of mLeU64: op = SpvOpULessThanEqual
+    of mLtU64: op = SpvOpSLessThan
+    # of mEqEnum: op =n, llvm.IntEQ)
+    # of mLeEnum: op =n, llvm.IntULE) # TODO underlying
+    # of mLtEnum: op =n, llvm.IntULT) # TODO underlying
+    # of mEqCh: op =n, llvm.IntEQ)
+    # of mLeCh: op =n, llvm.IntULE)
+    # of mLtCh: op =n, llvm.IntULT)
+    of mEqB: op = SpvOpLogicalEqual
+    # of mLeB: op =n, llvm.IntULE)
+    # of mLtB: op =n, llvm.IntULT)
+    # of mEqRef: op =n, llvm.IntEQ)
+    # of mEqUntracedRef: result = m.genMagicCmpI(n, llvm.IntEQ)
+    # of mLePtr: result = m.genMagicCmpI(n, llvm.IntULE)
+    # of mLtPtr: result = m.genMagicCmpI(n, llvm.IntULT)
+    # of mEqCString: result = m.genMagicCmpI(n, llvm.IntEQ)
+    # of mXor: result = m.genMagicCmpI(n, llvm.IntNE)
+    # of mEqProc: result = m.genMagicEqProc(n)
+    of mUnaryMinusI, mUnaryMinusI64: op = SpvOpSNegate
+    # of mAbsI: op = SpvOpIAbs
+    # of mNot: result = m.genMagicNot(n)
+    # of mBitnotI: result = m.genMagicBitnot(n)
+    of mUnaryMinusF64: op = SpvOpFNegate
+    # of mAbsF64: result = m.genMagicAbsF64(n)
+    #of mZe8ToI..mZeIToI64: result = m.genMagicZe(n)
+    # of mToU8, mToU16, mToU32: result = m.genMagicToU(n)
+    # of mToFloat, mToBiggestFloat: result = m.genMagicToFloat(n)
+    # of mToInt, mToBiggestInt: result = m.genMagicToInt(n)
+    # of mCharToStr: result = m.genMagicToStr(n, "nimCharToStr")
+    # of mBoolToStr: result = m.genMagicToStr(n, "nimBoolToStr")
+    # of mIntToStr: result = m.genMagicToStr(n, "nimIntToStr")
+    # of mInt64ToStr: result = m.genMagicToStr(n, "nimInt64ToStr")
+    # of mFloatToStr: result = m.genMagicToStr(n, "nimFloatToStr")
+    # of mCStrToStr: result = m.genMagicToStr(n, "cstrToNimstr")
+    # of mStrToStr: result = m.genMagicStrToStr(n)
+    # of mEnumToStr: result = m.genMagicEnumToStr(n)
+    # of mAnd, mOr: result = m.genMagicAndOr(n)
+    # of mEqStr: result = m.genMagicEqStr(n)
+    # of mLeStr: result = m.genMagicLeStr(n)
+    # of mLtStr: result = m.genMagicLtStr(n)
+    # of mEqSet: result = m.genMagicEqSet(n)
+    # of mLeSet: result = m.genMagicSetCmp(false
+    # of mLtSet: result = m.genMagicSetCmp(true
+    # of mMulSet: result = m.genMagicSetBinOp(llvm.And, false
+    # of mPlusSet: result = m.genMagicSetBinOp(llvm.Or, false
+    # of mMinusSet: result = m.genMagicSetBinOp(llvm.And, true
+    # of mSymDiffSet: result = m.genMagicSetBinOp(llvm.Xor, false
+    # of mConStrStr: result = m.genMagicConStrStr(n)
+    # of mDotDot: result = m.genMagicDotDot(n, load)
+    # of mAppendStrCh: m.genMagicAppendStrCh(n)
+    # of mAppendStrStr: m.genMagicAppendStrStr(n)
+    # of mAppendSeqElem: m.genMagicAppendSeqElem(n)
+    # of mInSet: result = m.genMagicInSet(n)
+    # of mRepr: result = m.genMagicRepr(n)
+    # of mExit: discard m.genCall(n, false)
+    # of mSetLengthStr: m.genMagicSetLengthStr(n)
+    # of mSetLengthSeq: m.genMagicSetLengthSeq(n)
+    # of mParallel: m.genMagicParallel(n)
+    # of mSwap: m.genMagicSwap(n)
+    # of mReset: m.genMagicReset(n)
+    # of mIsNil: result = m.genMagicIsNil(n)
+    # of mArrToSeq: result = m.genMagicArrToSeq(n)
+    # of mCopyStr, mCopyStrLast, mNewString, mNewStringOfCap, mParseBiggestFloat:
+    #   result = m.genMagicCall(n, load)
+    # of mSpawn: result = m.genMagicSpawn(n)
+    # of mDeepCopy: m.genMagicDeepCopy(n)
+    # of mGetTypeInfo: result = m.genMagicGetTypeInfo(n)
+    else: internalError(m.config, n.info, "Unhandled magic: " & $n[1].sym.magic)
+
+  m.genIntrinsic(op, n)
+
 proc genSons(m: SpirvModule; n: PNode) =
   for s in n: discard m.genNode(s)
 
@@ -484,16 +621,12 @@ proc genNode(m: SpirvModule; n: PNode, load: bool = false): SpirvId =
 
     of nkCallKinds:
 
-      if sfImportc notin n[0].sym.flags:
-        discard # TODO: Handle magic and user functions
-
       if n[0].sym.magic != mNone:
-        case n[0].sym.magic:
-          of mUnaryMinusF64:
-            result = m.generateId()
-            m.words.addInstruction(SpvOpFNegate, m.genType(n.typ), result, m.genNode(n[1]))
-          else: discard
+        return m.genMagic(n)
 
+      # elif sfImportc notin n[0].sym.flags:
+      #   internalError(m.config, "Not implemented: User defined functions") # TODO: Handle user functions
+  
       elif n[0].sym.name.s == "[]=":
         let
           left = m.generateId()
@@ -520,22 +653,12 @@ proc genNode(m: SpirvModule; n: PNode, load: bool = false): SpirvId =
         m.words.addInstruction(SpvOpLoad, resultType, result, temp)
 
       else:
-        var op: SpvOp
-        case $n[0].sym.loc.r:
-          of "OpCompositeConstruct": op = SpvOpCompositeConstruct
+        # TODO: Build lookup
+        for op in SpvOp:
+          if $op == "Spv" & $n[0].sym.loc.r:
+            return m.genIntrinsic(op, n)
 
-          of "OpVectorTimesScalar": op = SpvOpVectorTimesScalar
-          of "OpMatrixTimesScalar": op = SpvOpMatrixTimesScalar
-          of "OpMatrixTimesVector": op = SpvOpMatrixTimesVector
-          of "OpVectorTimesMatrix": op = SpvOpVectorTimesMatrix
-          of "OpMatrixTimesMatrix": op = SpvOpMatrixTimesMatrix 
-          else: discard
-
-        result = m.generateId()
-        var args: seq[SpirvId]
-        for i in 1 ..< n.sonsLen:
-          args.add(m.genNode(n[i], true))   
-        m.words.addInstruction(op, @[m.genType(n.typ), result] & args)
+        internalError(m.config, "Unhandled SPIR-V intrinsic")
 
     #of nkIdentDefs: discard m.genIdentDefs(n)
     of nkProcDef, nkFuncDef, nkMethodDef, nkIteratorDef, nkConverterDef: #m.genProcDef(n)

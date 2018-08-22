@@ -32,7 +32,12 @@ type
 
 func `[]`*(self: Vector; index: int): Vector.T {.importc.}
 func `[]=`*(self: var Vector; index: int; value: Vector.T) {.importc.}
-func `-`*(self: Vector): Vector {.importc: "OpFNegate".}
+
+func `-`*[T: SomeFloat; size: static[int]](self: Vector[T, size]): Vector[T, size] {.importc: "OpFNegate".}
+func `+`*[T: SomeFloat; size: static[int]](left, right: Vector[T, size]): Vector[T, size] {.importc: "OpFAdd".}
+func `-`*[T: SomeFloat; size: static[int]](left, right: Vector[T, size]): Vector[T, size] {.importc: "OpFSub".}
+func `*`*[T: SomeFloat; size: static[int]](left, right: Vector[T, size]): Vector[T, size] {.importc: "OpFMul".}
+func `/`*[T: SomeFloat; size: static[int]](left, right: Vector[T, size]): Vector[T, size] {.importc: "OpFDiv".}
 
 func construct*[T](): T {.varargs, importc: "OpCompositeConstruct".}
 
@@ -69,8 +74,6 @@ var
   color {.output, location: 0.}: Vector4
 
 proc vsMain() {.stage: Vertex.} =
-  # gl_Position = data.worldViewProjection * vec4(position, 1.0);
-  # gl_Position.y = -gl_Position.y;
   position0 = data.worldViewProjection * construct[Vector4](position[0], position[1], position[2], 1.0'f32)
   position0[1] = -position0[1] 
   texCoordVOut = texCoordVIn
