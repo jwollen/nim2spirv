@@ -377,6 +377,8 @@ proc genFunction(m: SpirvModule; s: PSym): SpirvFunction =
 
   m.functions.add(s.id, result)
 
+  m.nameWords.addInstruction(SpvOpName, @[result.id] & s.name.s.toWords())
+
   result.words.addInstruction(SpvOpFunction, functionType.returnType, result.id, 0'u32, functionType.id)
   result.words.addInstruction(SpvOpLabel, labelId)
 
@@ -433,6 +435,8 @@ proc genIdentDefs(m: SpirvModule; n: PNode): SpirvVariable =
 
   # TODO: Initializer
   result.words.addInstruction(SpvOpVariable, pointerType, result.id, result.storageClass.uint32)
+  
+  m.nameWords.addInstruction(SpvOpName, @[result.id] & result.symbol.name.s.toWords())
 
 proc genIntrinsic(m: SpirvModule; op: SpvOp; n: PNode): SpirvId =
   result = m.generateId()
