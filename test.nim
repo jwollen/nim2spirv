@@ -1,61 +1,4 @@
-
-type
-  ShaderStage* = enum
-    Vertex
-    Fragment
-    TessellationControl
-    TessellationEvaluation
-    Geometry
-    Compute
-    #Kernel
-
-  BuiltIn* = enum
-    Position
-    VertexId
-    InstanceId
-    PrimitiveId
-
-  float16* {.importc: "float16".} = object
-
-  Vector* {.importc.} [T; size: static[int]] = object
-
-  MatrixBase* {.importc.} [T; width: static[int]] = object
-  Matrix* [T; height, width: static[int]] = MatrixBase[Vector[T, height], width]
-
-  Vector2* = Vector[float32, 2]
-  Vector3* = Vector[float32, 3]
-  Vector4* = Vector[float32, 4]
-
-  Matrix3x3 = Matrix[float32, 3, 3]
-  Matrix4x3 = Matrix[float32, 4, 3]
-  Matrix4x4 = Matrix[float32, 4, 4]
-
-func `[]`*(self: Vector; index: int): Vector.T {.importc.}
-func `[]=`*(self: var Vector; index: int; value: Vector.T) {.importc.}
-
-func `-`*[T: SomeFloat; size: static[int]](self: Vector[T, size]): Vector[T, size] {.importc: "OpFNegate".}
-func `+`*[T: SomeFloat; size: static[int]](left, right: Vector[T, size]): Vector[T, size] {.importc: "OpFAdd".}
-func `-`*[T: SomeFloat; size: static[int]](left, right: Vector[T, size]): Vector[T, size] {.importc: "OpFSub".}
-func `*`*[T: SomeFloat; size: static[int]](left, right: Vector[T, size]): Vector[T, size] {.importc: "OpFMul".}
-func `/`*[T: SomeFloat; size: static[int]](left, right: Vector[T, size]): Vector[T, size] {.importc: "OpFDiv".}
-
-func construct*[T](): T {.varargs, importc: "OpCompositeConstruct".}
-
-func `*`*[T; size: static[int]](left: Vector[T, size]; right: T): Vector[T, size] {.importc: "OpVectorTimesScalar".}
-func `*`*[T; height, width: static[int]](left: Matrix[T, height, width]; right: T): Matrix[T, height, width] {.importc: "OpMatrixTimesScalar".}
-func `*`*[T; height, width: static[int]](left: Matrix[T, height, width]; right: Vector[T, width]): Vector[T, width] {.importc: "OpMatrixTimesVector".}
-func `*`*[T; height, width: static[int]](left: Vector[T, height]; right: Matrix[T, height, width]): Vector[T, height] {.importc: "OpVectorTimesMatrix".}
-func `*`*[T; height, width, size: static[int]](left: Matrix[T, height, size]; right: Matrix[T, size, width]): Matrix[T, height, width] {.importc: "OpMatrixTimesMatrix".}
-
-template stage*(ShaderStage) {.pragma.}
-template builtIn*(BuiltIn) {.pragma.}
-template location*(int) {.pragma.}
-template binding*(int) {.pragma.}
-template descriptorSet*(int) {.pragma.}
-
-template input*() {.pragma.}
-template output*() {.pragma.}
-template uniform*() {.pragma.}
+import shaders
 
 type
   Data = object
@@ -75,7 +18,7 @@ var
 
 proc vsMain() {.stage: Vertex.} =
   position0 = data.worldViewProjection * construct[Vector4](position[0], position[1], position[2], 1.0'f32)
-  position0[1] = -position0[1] 
+  position0[1] = -position0[1]
   texCoordVOut = texCoordVIn
 
 proc fsMain() {.stage: Fragment.} =
