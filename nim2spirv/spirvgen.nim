@@ -5,7 +5,7 @@ import
 import ../compiler/[
   ast, astalgo, platform, magicsys, extccomp, trees, bitsets,
   nversion, nimsets, msgs, idents, types, options, ropes,
-  passes, ccgutils, wordrecg, renderer, rodutils,
+  passes, ccgutils, wordrecg, renderer, rodutils, msgs,
   cgmeth, lowerings, sighashes, modulegraphs, lineinfos]
 
 import
@@ -32,11 +32,14 @@ type
     currentFunction: SpirvFunction
     module: PSym
     nextId: uint32
+    strings: Table[string, SpirvId]
+    fileNames: Table[FileIndex, SpirvId]
     entryPoints: seq[tuple[function: SpirvFunction; executionModel: SpvExecutionModel]]
     variables: Table[int, SpirvVariable]
     functions: Table[int, SpirvFunction]
     functionTypes: seq[SpirvFunctionType]
 
+    stringWords: seq[uint32]
     decorationWords: seq[uint32]
     nameWords: seq[uint32]
     constantWords: seq[uint32]
@@ -95,6 +98,8 @@ proc rawNewModule(g: SpirvModuleList; module: PSym, filename: string): SpirvModu
   result.filename = filename
   result.nextId = 1
   result.module = module
+  result.strings = initTable[string, SpirvId]()
+  result.fileNames = initTable[FileIndex, SpirvId]()
   result.functions = initTable[int, SpirvFunction]()
   result.variables = initTable[int, SpirvVariable]()
   result.pointerTypes = initTable[(SpirvId, SpvStorageClass), SpirvId]()
@@ -141,6 +146,17 @@ var level = 0
 proc generateId(m: SpirvModule): uint32 =
   result = m.nextId
   inc m.nextId
+
+proc genLineInfo(m: SpirvModule; n: PNode) =
+  var nameId = m.fileNames.getOrDefault(n.info.fileIndex, 0)
+  if nameId == 0:
+    var name = toFilename(m.config, n.info.fileIndex)
+    nameId = m.strings.getOrDefault(name, 0)
+    if nameId == 0:
+      m.strings.add(name, nameId)
+    m.fileNames.add(n.info.fileIndex, nameId)
+
+  m.stringWords.addInstruction(SpvOpLine, nameId, n.info.line.uint32, n.info.col.uint32)
 
 iterator procParams(typ: PType): PNode =
   for a in typ.n.sons[1..^1]:
@@ -394,20 +410,18 @@ proc genIdentDefs(m: SpirvModule; n: PNode): SpirvVariable =
 
   new(result)
   result.id = m.generateId()
-
-  if n[0].kind == nkPragmaExpr:
-    result.symbol = n[0][0].sym
-  else:
-    result.symbol = n[0].sym
+  result.symbol = n[0].sym
 
   if result.symbol.flags.contains(sfGlobal) or m.currentFunction == nil:
     result.storageClass = SpvStorageClassPrivate
   else:
     result.storageClass = SpvStorageClassFunction
 
-  if n[0].kind == nkPragmaExpr:
+  let src = n[0].sym.loc.lode
+  if src.kind == nkPragmaExpr:
     
-    for pragma in n.sons[0][1]:
+    for pragma in src[1]:
+      echo pragma
       if pragma.kind == nkExprColonExpr and pragma[0].kind == nkSym:
         case pragma[0].sym.name.s.normalize():
           of "location": m.decorationWords.addInstruction(SpvOpDecorate, result.id, SpvDecorationLocation.uint32, pragma[1].intVal.uint32)
@@ -766,30 +780,22 @@ proc myClose(graph: ModuleGraph; b: PPassContext, n: PNode): PNode =
       m.words.addInstruction(SpvOpExecutionMode, entryPoint.function.id, SpvExecutionModeOriginUpperLeft.uint32)
 
   # Debug instructions
-    # Strings
-    # SourceExtensions
-    # Source
-    # SourceContinued
-    # Names
+    # Strings, SourceExtensions, Source SourceContinued
+  m.words.add(m.stringWords)
+    # Names, # MemberNames
   m.words.add(m.nameWords)
-#  m.words.addInstruction(SpvOpName, uint32.none, uint32.none, 2, "main".toWords)
-    # MemberNames
-  # Annotations
-    # Decorates
+    
+  # Annotations (Decorates, MemberDescorates, GroupDecorates, GroupMemberDecorates)
   m.words.add(m.decorationWords)
-    # MemberDescorates
-    # GroupDecorates
-    # GroupMemberDecorates
-    # DecorationsGroups
+    
   # (Lines valid from here)
-    # Types
+    # Types, constants, Non-function Variables
   m.words.add(m.typeWords)
-    # Constants
   m.words.add(m.constantWords)
-    # Non-function Variables
   for id, variable in m.variables:
     m.words.add(variable.words)
     # Undef
+    
   # Function declarations (Functions, FunctionParameters, FunctionsEnds)
   # Function definitions
 
