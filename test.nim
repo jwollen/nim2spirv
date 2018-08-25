@@ -2,7 +2,7 @@ import shaders
 
 type
   Data = object
-    worldViewProjection: Matrix4x4
+    worldViewProjection {.rowMajor.}: Matrix4x4
 
 var
   data {.uniform, descriptorSet: 0, binding: 0.}: Data
@@ -17,7 +17,7 @@ var
   color {.output, location: 0.}: Vector4
 
 proc vsMain() {.stage: Vertex.} =
-  position0 = data.worldViewProjection * construct[Vector4](position.xyz, 1.0'f32)
+  position0 = construct[Vector4](position.xyz, 1.0'f32) * data.worldViewProjection
   position0.y = -position0.y
   texCoordVOut = texCoordVIn
 

@@ -255,6 +255,18 @@ proc genType(m: SpirvModule; t: PType): SpirvId =
       var memberTypes = newSeq[SpirvId]()
       for i, member in t.n.pairs:
         memberTypes.add(m.genType(member.typ))
+
+        var matrixLayout = SpvDecorationColMajor
+
+        let src = member.sym.loc.lode
+        if src != nil and src.kind == nkPragmaExpr:
+          echo src[1]
+          for pragma in src[1]:
+            if pragma.kind == nkSym:
+              case pragma.sym.name.s:
+                of "rowMajor": matrixLayout = SpvDecorationRowMajor
+                else: discard
+
         m.nameWords.addInstruction(SpvOpMemberName, @[result, i.uint32] & member.sym.name.s.toWords())
 
         m.decorationWords.addInstruction(SpvOpDecorate, result, SpvDecorationBlock.uint32)
@@ -263,7 +275,7 @@ proc genType(m: SpirvModule; t: PType): SpirvId =
         m.decorationWords.addInstruction(SpvOpMemberDecorate, result, i.uint32, SpvDecorationOffset.uint32, member.sym.offset.uint32)
         if ($member.typ).startsWith("Matrix"):
           # TODO: Handle row major
-          m.decorationWords.addInstruction(SpvOpMemberDecorate, result, i.uint32, SpvDecorationColMajor.uint32)
+          m.decorationWords.addInstruction(SpvOpMemberDecorate, result, i.uint32, matrixLayout.uint32)
           m.decorationWords.addInstruction(SpvOpMemberDecorate, result, i.uint32, SpvDecorationMatrixStride.uint32, 16'u32)
 
       m.typeWords.addInstruction(SpvOpTypeStruct, @[result] & memberTypes)
@@ -421,7 +433,6 @@ proc genIdentDefs(m: SpirvModule; n: PNode): SpirvVariable =
   if src.kind == nkPragmaExpr:
     
     for pragma in src[1]:
-      echo pragma
       if pragma.kind == nkExprColonExpr and pragma[0].kind == nkSym:
         case pragma[0].sym.name.s.normalize():
           of "location": m.decorationWords.addInstruction(SpvOpDecorate, result.id, SpvDecorationLocation.uint32, pragma[1].intVal.uint32)

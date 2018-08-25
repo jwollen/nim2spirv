@@ -121,6 +121,8 @@ template input*() {.pragma.}
 template output*() {.pragma.}
 template uniform*() {.pragma.}
 
+template rowMajor*() {.pragma.}
+
 # Vector swizzles
 func getSwizzleIndex(c: char): int {.compileTime.} =
   case c:
