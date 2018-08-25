@@ -41,7 +41,7 @@ proc genNode(g: SpirvGen; n: PNode) =
     of nkStrLit: text &= ": " & $n.strVal
     else: discard
     
-  #echo text
+  echo text
 
   inc level
 

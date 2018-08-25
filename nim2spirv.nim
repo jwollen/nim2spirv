@@ -14,8 +14,8 @@ proc semanticPasses(graph: ModuleGraph) =
 proc commandCompileToSpirv(graph: ModuleGraph) =
   setTarget(graph.config.target, osStandalone, cpuI386)
   defineSymbol(graph.config.symbols, "spirv")
-  registerPass(graph, spirvSemanticPass)
   semanticPasses(graph)
+  registerPass(graph, spirvSemanticPass)
   registerPass(graph, spirvGenPass)
   compileProject(graph)
 
