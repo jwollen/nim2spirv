@@ -1,4 +1,4 @@
-#import std/[macros, strutils]
+import std/[macros, strutils]
 
 {.experimental: "dotOperators".}
 
@@ -102,6 +102,9 @@ func `/`*[T: SomeFloat; size: static[int]](left, right: Vector[T, size]): Vector
 
 func construct*[T](): T {.varargs, importc: "OpCompositeConstruct".}
 
+# proc toVector*[T; size: static[int]](args: varargs[T]): Vector[T, size] =
+#   construct[Vector[T, size]](args)
+
 func `*`*[T; size: static[int]](left: Vector[T, size]; right: T): Vector[T, size] {.importc: "OpVectorTimesScalar".}
 func `*`*[T; height, width: static[int]](left: Matrix[T, height, width]; right: T): Matrix[T, height, width] {.importc: "OpMatrixTimesScalar".}
 func `*`*[T; height, width: static[int]](left: Matrix[T, height, width]; right: Vector[T, width]): Vector[T, width] {.importc: "OpMatrixTimesVector".}
@@ -118,67 +121,63 @@ template input*() {.pragma.}
 template output*() {.pragma.}
 template uniform*() {.pragma.}
 
+# Vector swizzles
+func getSwizzleIndex(c: char): int {.compileTime.} =
+  case c:
+    of 'x', 'r': return 0
+    of 'y', 'g': return 1
+    of 'z', 'b': return 2
+    of 'w', 'a': return 3
+    else: raiseAssert($c & " is not a valid vector swizzle")
 
+# Assumes `[]` operator and the convertor from arrays on vectors
+macro `.`*(self: Vector; swizzle: untyped): untyped =
+  var
+    cardinality = ($swizzle).len
 
-
-# # Vector swizzles
-# func getSwizzleIndex(c: char): int {.compileTime.} =
-#   case c:
-#     of 'x', 'r': return 0
-#     of 'y', 'g': return 1
-#     of 'z', 'b': return 2
-#     of 'w', 'a': return 3
-#     else: raiseAssert($c & " is not a valid vector swizzle")
-
-# # Assumes `[]` operator and the convertor from arrays on vectors
-# macro `.`*(self: Vector; swizzle: untyped): untyped =
-#   var
-#     cardinality = ($swizzle).len
-
-#   # For one-element swizzles, just return the scalar element
-#   # v.elements[0]
-#   if cardinality == 1:
-#     return nnkBracketExpr.newTree(self, newIntLitNode(($swizzle)[0].getSwizzleIndex))
+  # For one-element swizzles, just return the scalar element
+  # v.elements[0]
+  if cardinality == 1:
+    return nnkBracketExpr.newTree(self, newIntLitNode(($swizzle)[0].getSwizzleIndex))
     
-#   else:
-#     var
-#       values = newNimNode(nnkBracket)
-#       temp = genSym()
+  else:
+    # The result is a call to `construct`
+    result = nnkCall.newTree()
 
-#     # Make an array of values, one for each swizzle index
-#     # [temp[1], temp[0], ...]
-#     for c in $swizzle:
-#       values.add(nnkBracketExpr.newTree(temp, newIntLitNode(c.getSwizzleIndex)))
+    # The first argument is the symbol of the appropriate generic instance of `construct`
+    result.add quote do:
+      construct[Vector[type(`self`).T, `cardinality`]]
+    
+    # Add the call arguments, one for each swizzle index
+    # [temp[1], temp[0], ...]
+    for c in $swizzle:
+      result.add(nnkBracketExpr.newTree(self, newIntLitNode(c.getSwizzleIndex)))
 
-#     return quote do:
-#       let `temp` = `self`
-#       toVector[`temp`.T, `cardinality`](`values`)
-
-# # Assumes `[]` and `[]=` operators on vectors
-# macro `.=`*(self: var Vector; swizzle: untyped; value: untyped): untyped =
-#   var 
-#     cardinality = ($swizzle).len
+# Assumes `[]` and `[]=` operators on vectors
+macro `.=`*(self: var Vector; swizzle: untyped; value: untyped): untyped =
+  var 
+    cardinality = ($swizzle).len
   
-#   # For single elements, just do single assignment
-#   if cardinality == 1:
-#     return newAssignment(nnkBracketExpr.newTree(self, newIntLitNode(($swizzle)[0].getSwizzleIndex)), value)
+  # For single elements, just do single assignment
+  if cardinality == 1:
+    return newAssignment(nnkBracketExpr.newTree(self, newIntLitNode(($swizzle)[0].getSwizzleIndex)), value)
 
-#   else:
-#     var temp = genSym()
+  else:
+    var temp = genSym()
 
-#     # Evaluate the right-hand side into a temporary variable
-#     # let temp = self
-#     result = newStmtList(
-#       nnkLetSection.newTree(
-#         newIdentDefs(temp, newEmptyNode(), value)))
+    # Evaluate the right-hand side into a temporary variable
+    # let temp = self
+    result = newStmtList(
+      nnkLetSection.newTree(
+        newIdentDefs(temp, newEmptyNode(), value)))
 
-#     # For each swizzle index, add an assignment of the corresponding element
-#     # self[swizzleIndex(c)] = temp[i]
-#     for i, c in $swizzle:
-#       result.add(
-#         newAssignment(
-#           nnkBracketExpr.newTree(self, newIntLitNode(c.getSwizzleIndex)),
-#           nnkBracketExpr.newTree(temp, newIntLitNode(i))))
+    # For each swizzle index, add an assignment of the corresponding element
+    # self[swizzleIndex(c)] = temp[i]
+    for i, c in $swizzle:
+      result.add(
+        newAssignment(
+          nnkBracketExpr.newTree(self, newIntLitNode(c.getSwizzleIndex)),
+          nnkBracketExpr.newTree(temp, newIntLitNode(i))))
 
 # func getMatrixSwizzles(swizzle: string): seq[(int, int)] {.compileTime.} =
 

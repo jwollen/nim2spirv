@@ -17,12 +17,9 @@ var
   color {.output, location: 0.}: Vector4
 
 proc vsMain() {.stage: Vertex.} =
-  position0 = data.worldViewProjection * construct[Vector4](position[0], position[1], position[2], 1.0'f32)
-  position0[1] = -position0[1]
+  position0 = data.worldViewProjection * construct[Vector4](position.xyz, 1.0'f32)
+  position0.y = -position0.y
   texCoordVOut = texCoordVIn
 
 proc fsMain() {.stage: Fragment.} =
-  color[0] = texCoord[0]
-  color[1] = texCoord[1]
-  color[2] = 0.0'f32
-  color[3] = 1.0'f32
+  color = construct[Vector4](texCoord.xy, 0.0'f32, 1.0'f32)

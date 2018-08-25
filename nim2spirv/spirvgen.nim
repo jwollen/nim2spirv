@@ -641,10 +641,7 @@ proc genNode(m: SpirvModule; n: PNode, load: bool = false): SpirvId =
 
       if n[0].sym.magic != mNone:
         return m.genMagic(n)
-
-      # elif sfImportc notin n[0].sym.flags:
-      #   internalError(m.config, "Not implemented: User defined functions") # TODO: Handle user functions
-  
+ 
       elif n[0].sym.name.s == "[]=":
         let
           left = m.generateId()
@@ -670,13 +667,16 @@ proc genNode(m: SpirvModule; n: PNode, load: bool = false): SpirvId =
         m.words.addInstruction(SpvOpAccessChain, m.genPointerType(resultType, variable.storageClass), temp, variable.id, m.genNode(n[2]))
         m.words.addInstruction(SpvOpLoad, resultType, result, temp)
 
+      elif sfImportc notin n[0].sym.flags:
+        internalError(m.config, "Not implemented: User defined functions") # TODO: Handle user functions
+
       else:
         # TODO: Build lookup
         for op in SpvOp:
           if $op == "Spv" & $n[0].sym.loc.r:
             return m.genIntrinsic(op, n)
 
-        internalError(m.config, "Unhandled SPIR-V intrinsic")
+        internalError(m.config, "Unhandled SPIR-V intrinsic " & $n[0].sym.loc.r)
 
     #of nkIdentDefs: discard m.genIdentDefs(n)
     of nkProcDef, nkFuncDef, nkMethodDef, nkIteratorDef, nkConverterDef: #m.genProcDef(n)
