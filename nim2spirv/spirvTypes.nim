@@ -5,7 +5,7 @@ const
   SpvRevision* = 2
   SpvOpCodeMask* = 0xffff
   SpvWordCountShift* = 16
-
+  
 type
   SpvSourceLanguage* {.size: sizeof(uint32).} = enum
     SpvSourceLanguageUnknown = 0
@@ -23,6 +23,14 @@ type
     SpvExecutionModelFragment = 4
     SpvExecutionModelGLCompute = 5
     SpvExecutionModelKernel = 6
+    SpvExecutionModelTaskNV = 5267
+    SpvExecutionModelMeshNV = 5268
+    SpvExecutionModelRayGenerationNVX = 5313
+    SpvExecutionModelIntersectionNVX = 5314
+    SpvExecutionModelAnyHitNVX = 5315
+    SpvExecutionModelClosestHitNVX = 5316
+    SpvExecutionModelMissNVX = 5317
+    SpvExecutionModelCallableNVX = 5318
 
   SpvAddressingModel* {.size: sizeof(uint32).} = enum
     SpvAddressingModelLogical = 0
@@ -33,6 +41,7 @@ type
     SpvMemoryModelSimple = 0
     SpvMemoryModelGLSL450 = 1
     SpvMemoryModelOpenCL = 2
+    SpvMemoryModelVulkanKHR = 3
 
   SpvExecutionMode* {.size: sizeof(uint32).} = enum
     SpvExecutionModeInvocations = 0
@@ -75,6 +84,11 @@ type
     SpvExecutionModeLocalSizeHintId = 39
     SpvExecutionModePostDepthCoverage = 4446
     SpvExecutionModeStencilRefReplacingEXT = 5027
+    SpvExecutionModeOutputLinesNV = 5269
+    SpvExecutionModeOutputPrimitivesNV = 5270
+    SpvExecutionModeDerivativeGroupQuadsNV = 5289
+    SpvExecutionModeDerivativeGroupLinearNV = 5290
+    SpvExecutionModeOutputTrianglesNV = 5298
 
   SpvStorageClass* {.size: sizeof(uint32).} = enum
     SpvStorageClassUniformConstant = 0
@@ -90,6 +104,10 @@ type
     SpvStorageClassAtomicCounter = 10
     SpvStorageClassImage = 11
     SpvStorageClassStorageBuffer = 12
+    SpvStorageClassRayPayloadNVX = 5338
+    SpvStorageClassHitAttributeNVX = 5339
+    SpvStorageClassIncomingRayPayloadNVX = 5342
+    SpvStorageClassShaderRecordBufferNVX = 5343
 
   SpvDim* {.size: sizeof(uint32).} = enum
     SpvDim1D = 0
@@ -203,6 +221,10 @@ type
     SpvImageOperandsConstOffsetsShift = 5
     SpvImageOperandsSampleShift = 6
     SpvImageOperandsMinLodShift = 7
+    SpvImageOperandsMakeTexelAvailableKHRShift = 8
+    SpvImageOperandsMakeTexelVisibleKHRShift = 9
+    SpvImageOperandsNonPrivateTexelKHRShift = 10
+    SpvImageOperandsVolatileTexelKHRShift = 11
 
   SpvImageOperandsMask* {.size: sizeof(uint32).} = enum
     SpvImageOperandsMaskNone = 0
@@ -214,6 +236,10 @@ type
     SpvImageOperandsConstOffsetsMask = 32
     SpvImageOperandsSampleMask = 64
     SpvImageOperandsMinLodMask = 128
+    SpvImageOperandsMakeTexelAvailableKHRMask = 256
+    SpvImageOperandsMakeTexelVisibleKHRMask = 512
+    SpvImageOperandsNonPrivateTexelKHRMask = 1024
+    SpvImageOperandsVolatileTexelKHRMask = 2048
 
   SpvFPFastMathModeShift* {.size: sizeof(uint32).} = enum
     SpvFPFastMathModeNotNaNShift = 0
@@ -307,6 +333,11 @@ type
     SpvDecorationPassthroughNV = 5250
     SpvDecorationViewportRelativeNV = 5252
     SpvDecorationSecondaryViewportRelativeNV = 5256
+    SpvDecorationPerPrimitiveNV = 5271
+    SpvDecorationPerViewNV = 5272
+    SpvDecorationPerTaskNV = 5273
+    SpvDecorationPerVertexNV = 5285
+    SpvDecorationNonUniformEXT = 5300
     SpvDecorationHlslCounterBufferGOOGLE = 5634
     SpvDecorationHlslSemanticGOOGLE = 5635
 
@@ -375,6 +406,32 @@ type
     SpvBuiltInSecondaryViewportMaskNV = 5258
     SpvBuiltInPositionPerViewNV = 5261
     SpvBuiltInViewportMaskPerViewNV = 5262
+    SpvBuiltInFullyCoveredEXT = 5264
+    SpvBuiltInTaskCountNV = 5274
+    SpvBuiltInPrimitiveCountNV = 5275
+    SpvBuiltInPrimitiveIndicesNV = 5276
+    SpvBuiltInClipDistancePerViewNV = 5277
+    SpvBuiltInCullDistancePerViewNV = 5278
+    SpvBuiltInLayerPerViewNV = 5279
+    SpvBuiltInMeshViewCountNV = 5280
+    SpvBuiltInMeshViewIndicesNV = 5281
+    SpvBuiltInBaryCoordNV = 5286
+    SpvBuiltInBaryCoordNoPerspNV = 5287
+    SpvBuiltInFragmentSizeNV = 5292
+    SpvBuiltInInvocationsPerPixelNV = 5293
+    SpvBuiltInLaunchIdNVX = 5319
+    SpvBuiltInLaunchSizeNVX = 5320
+    SpvBuiltInWorldRayOriginNVX = 5321
+    SpvBuiltInWorldRayDirectionNVX = 5322
+    SpvBuiltInObjectRayOriginNVX = 5323
+    SpvBuiltInObjectRayDirectionNVX = 5324
+    SpvBuiltInRayTminNVX = 5325
+    SpvBuiltInRayTmaxNVX = 5326
+    SpvBuiltInInstanceCustomIndexNVX = 5327
+    SpvBuiltInObjectToWorldNVX = 5330
+    SpvBuiltInWorldToObjectNVX = 5331
+    SpvBuiltInHitTNVX = 5332
+    SpvBuiltInHitKindNVX = 5333
 
   SpvSelectionControlShift* {.size: sizeof(uint32).} = enum
     SpvSelectionControlFlattenShift = 0
@@ -422,6 +479,9 @@ type
     SpvMemorySemanticsCrossWorkgroupMemoryShift = 9
     SpvMemorySemanticsAtomicCounterMemoryShift = 10
     SpvMemorySemanticsImageMemoryShift = 11
+    SpvMemorySemanticsOutputMemoryKHRShift = 12
+    SpvMemorySemanticsMakeAvailableKHRShift = 13
+    SpvMemorySemanticsMakeVisibleKHRShift = 14
 
   SpvMemorySemanticsMask* {.size: sizeof(uint32).} = enum
     SpvMemorySemanticsMaskNone = 0
@@ -435,17 +495,26 @@ type
     SpvMemorySemanticsCrossWorkgroupMemoryMask = 512
     SpvMemorySemanticsAtomicCounterMemoryMask = 1024
     SpvMemorySemanticsImageMemoryMask = 2048
+    SpvMemorySemanticsOutputMemoryKHRMask = 4096
+    SpvMemorySemanticsMakeAvailableKHRMask = 8192
+    SpvMemorySemanticsMakeVisibleKHRMask = 16384
 
   SpvMemoryAccessShift* {.size: sizeof(uint32).} = enum
     SpvMemoryAccessVolatileShift = 0
     SpvMemoryAccessAlignedShift = 1
     SpvMemoryAccessNontemporalShift = 2
+    SpvMemoryAccessMakePointerAvailableKHRShift = 3
+    SpvMemoryAccessMakePointerVisibleKHRShift = 4
+    SpvMemoryAccessNonPrivatePointerKHRShift = 5
 
   SpvMemoryAccessMask* {.size: sizeof(uint32).} = enum
     SpvMemoryAccessMaskNone = 0
     SpvMemoryAccessVolatileMask = 1
     SpvMemoryAccessAlignedMask = 2
     SpvMemoryAccessNontemporalMask = 4
+    SpvMemoryAccessMakePointerAvailableKHRMask = 8
+    SpvMemoryAccessMakePointerVisibleKHRMask = 16
+    SpvMemoryAccessNonPrivatePointerKHRMask = 32
 
   SpvScope* {.size: sizeof(uint32).} = enum
     SpvScopeCrossDevice = 0
@@ -453,11 +522,16 @@ type
     SpvScopeWorkgroup = 2
     SpvScopeSubgroup = 3
     SpvScopeInvocation = 4
+    SpvScopeQueueFamilyKHR = 5
 
   SpvGroupOperation* {.size: sizeof(uint32).} = enum
     SpvGroupOperationReduce = 0
     SpvGroupOperationInclusiveScan = 1
     SpvGroupOperationExclusiveScan = 2
+    SpvGroupOperationClusteredReduce = 3
+    SpvGroupOperationPartitionedReduceNV = 6
+    SpvGroupOperationPartitionedInclusiveScanNV = 7
+    SpvGroupOperationPartitionedExclusiveScanNV = 8
 
   SpvKernelEnqueueFlags* {.size: sizeof(uint32).} = enum
     SpvKernelEnqueueFlagsWaitKernel = 0
@@ -530,6 +604,14 @@ type
     SpvCapabilitySubgroupDispatch = 58
     SpvCapabilityNamedBarrier = 59
     SpvCapabilityPipeStorage = 60
+    SpvCapabilityGroupNonUniform = 61
+    SpvCapabilityGroupNonUniformVote = 62
+    SpvCapabilityGroupNonUniformArithmetic = 63
+    SpvCapabilityGroupNonUniformBallot = 64
+    SpvCapabilityGroupNonUniformShuffle = 65
+    SpvCapabilityGroupNonUniformShuffleRelative = 66
+    SpvCapabilityGroupNonUniformClustered = 67
+    SpvCapabilityGroupNonUniformQuad = 68
     SpvCapabilitySubgroupBallotKHR = 4423
     SpvCapabilityDrawParameters = 4427
     SpvCapabilitySubgroupVoteKHR = 4431
@@ -543,6 +625,10 @@ type
     SpvCapabilityVariablePointers = 4442
     SpvCapabilityAtomicStorageOps = 4445
     SpvCapabilitySampleMaskPostDepthCoverage = 4447
+    SpvCapabilityStorageBuffer8BitAccess = 4448
+    SpvCapabilityUniformAndStorageBuffer8BitAccess = 4449
+    SpvCapabilityStoragePushConstant8 = 4450
+    SpvCapabilityFloat16ImageAMD = 5008
     SpvCapabilityImageGatherBiasLodAMD = 5009
     SpvCapabilityFragmentMaskAMD = 5010
     SpvCapabilityStencilExportEXT = 5013
@@ -553,6 +639,29 @@ type
     SpvCapabilityShaderViewportMaskNV = 5255
     SpvCapabilityShaderStereoViewNV = 5259
     SpvCapabilityPerViewAttributesNV = 5260
+    SpvCapabilityFragmentFullyCoveredEXT = 5265
+    SpvCapabilityMeshShadingNV = 5266
+    SpvCapabilityImageFootprintNV = 5282
+    SpvCapabilityFragmentBarycentricNV = 5284
+    SpvCapabilityComputeDerivativeGroupQuadsNV = 5288
+    SpvCapabilityShadingRateNV = 5291
+    SpvCapabilityGroupNonUniformPartitionedNV = 5297
+    SpvCapabilityShaderNonUniformEXT = 5301
+    SpvCapabilityRuntimeDescriptorArrayEXT = 5302
+    SpvCapabilityInputAttachmentArrayDynamicIndexingEXT = 5303
+    SpvCapabilityUniformTexelBufferArrayDynamicIndexingEXT = 5304
+    SpvCapabilityStorageTexelBufferArrayDynamicIndexingEXT = 5305
+    SpvCapabilityUniformBufferArrayNonUniformIndexingEXT = 5306
+    SpvCapabilitySampledImageArrayNonUniformIndexingEXT = 5307
+    SpvCapabilityStorageBufferArrayNonUniformIndexingEXT = 5308
+    SpvCapabilityStorageImageArrayNonUniformIndexingEXT = 5309
+    SpvCapabilityInputAttachmentArrayNonUniformIndexingEXT = 5310
+    SpvCapabilityUniformTexelBufferArrayNonUniformIndexingEXT = 5311
+    SpvCapabilityStorageTexelBufferArrayNonUniformIndexingEXT = 5312
+    SpvCapabilityRaytracingNVX = 5340
+    SpvCapabilityVulkanMemoryModelKHR = 5345
+    SpvCapabilityVulkanMemoryModelDeviceScopeKHR = 5346
+    SpvCapabilityComputeDerivativeGroupLinearNV = 5350
     SpvCapabilitySubgroupShuffleINTEL = 5568
     SpvCapabilitySubgroupBufferBlockIOINTEL = 5569
     SpvCapabilitySubgroupImageBlockIOINTEL = 5570
@@ -864,6 +973,40 @@ type
     SpvOpModuleProcessed = 330
     SpvOpExecutionModeId = 331
     SpvOpDecorateId = 332
+    SpvOpGroupNonUniformElect = 333
+    SpvOpGroupNonUniformAll = 334
+    SpvOpGroupNonUniformAny = 335
+    SpvOpGroupNonUniformAllEqual = 336
+    SpvOpGroupNonUniformBroadcast = 337
+    SpvOpGroupNonUniformBroadcastFirst = 338
+    SpvOpGroupNonUniformBallot = 339
+    SpvOpGroupNonUniformInverseBallot = 340
+    SpvOpGroupNonUniformBallotBitExtract = 341
+    SpvOpGroupNonUniformBallotBitCount = 342
+    SpvOpGroupNonUniformBallotFindLSB = 343
+    SpvOpGroupNonUniformBallotFindMSB = 344
+    SpvOpGroupNonUniformShuffle = 345
+    SpvOpGroupNonUniformShuffleXor = 346
+    SpvOpGroupNonUniformShuffleUp = 347
+    SpvOpGroupNonUniformShuffleDown = 348
+    SpvOpGroupNonUniformIAdd = 349
+    SpvOpGroupNonUniformFAdd = 350
+    SpvOpGroupNonUniformIMul = 351
+    SpvOpGroupNonUniformFMul = 352
+    SpvOpGroupNonUniformSMin = 353
+    SpvOpGroupNonUniformUMin = 354
+    SpvOpGroupNonUniformFMin = 355
+    SpvOpGroupNonUniformSMax = 356
+    SpvOpGroupNonUniformUMax = 357
+    SpvOpGroupNonUniformFMax = 358
+    SpvOpGroupNonUniformBitwiseAnd = 359
+    SpvOpGroupNonUniformBitwiseOr = 360
+    SpvOpGroupNonUniformBitwiseXor = 361
+    SpvOpGroupNonUniformLogicalAnd = 362
+    SpvOpGroupNonUniformLogicalOr = 363
+    SpvOpGroupNonUniformLogicalXor = 364
+    SpvOpGroupNonUniformQuadBroadcast = 365
+    SpvOpGroupNonUniformQuadSwap = 366
     SpvOpSubgroupBallotKHR = 4421
     SpvOpSubgroupFirstInvocationKHR = 4422
     SpvOpSubgroupAllKHR = 4428
@@ -880,6 +1023,14 @@ type
     SpvOpGroupSMaxNonUniformAMD = 5007
     SpvOpFragmentMaskFetchAMD = 5011
     SpvOpFragmentFetchAMD = 5012
+    SpvOpImageSampleFootprintNV = 5283
+    SpvOpGroupNonUniformPartitionNV = 5296
+    SpvOpWritePackedPrimitiveIndices4x8NV = 5299
+    SpvOpReportIntersectionNVX = 5334
+    SpvOpIgnoreIntersectionNVX = 5335
+    SpvOpTerminateRayNVX = 5336
+    SpvOpTraceNVX = 5337
+    SpvOpTypeAccelerationStructureNVX = 5341
     SpvOpSubgroupShuffleINTEL = 5571
     SpvOpSubgroupShuffleDownINTEL = 5572
     SpvOpSubgroupShuffleUpINTEL = 5573
