@@ -10,7 +10,19 @@ type
     Geometry
     Fragment
     Compute
-    #Kernel
+
+    # OpenCL
+    Kernel
+
+    # Turing stages
+    Task
+    Mesh
+    RayGeneration
+    Intersection
+    AnyHit
+    ClosestHit
+    Miss
+    Callable
 
   BuiltIn* = enum
     Position

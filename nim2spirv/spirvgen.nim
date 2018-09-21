@@ -711,6 +711,15 @@ proc genNode(m: SpirvModule; n: PNode, load: bool = false): SpirvId =
             of "tessellationcontrol":  SpvExecutionModelTessellationControl
             of "tessellationevaluation": SpvExecutionModelTessellationEvaluation
             of "compute": SpvExecutionModelGLCompute
+            of "Kernel": SpvExecutionModelKernel
+            of "Task": SpvExecutionModelTaskNV
+            of "Mesh": SpvExecutionModelMeshNV
+            of "RayGeneration": SpvExecutionModelRayGenerationNVX
+            of "Intersection": SpvExecutionModelIntersectionNVX
+            of "AnyHit": SpvExecutionModelAnyHitNVX
+            of "ClosestHit": SpvExecutionModelClosestHitNVX
+            of "Miss": SpvExecutionModelMissNVX
+            of "Callable": SpvExecutionModelCallableNVX
             else: raise newException(ValueError, "Unsupported value")
           
           executionModels.incl(executionModel)
