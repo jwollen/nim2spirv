@@ -6,7 +6,7 @@ import ../compiler/[
   ast, astalgo, platform, magicsys, extccomp, trees, bitsets,
   nversion, nimsets, msgs, idents, types, options, ropes,
   passes, ccgutils, wordrecg, renderer, rodutils, msgs,
-  cgmeth, lowerings, sighashes, modulegraphs, lineinfos]
+  cgmeth, lowerings, sighashes, modulegraphs, lineinfos, pathutils]
 
 import
   spirvTypes, glslTypes, openclTypes
@@ -76,8 +76,9 @@ type
     returnType: SpirvId
     argTypes: seq[SpirvId]
 
-proc hash(v: SpirvVariable): Hash =
-  hash(v.id)
+proc hash(self: SpvStorageClass): Hash = hash(self.ord)
+
+proc hash(self: SpirvVariable): Hash = hash(self.id)
 
 template config*(m: SpirvModule): ConfigRef = m.g.config
 
@@ -127,10 +128,10 @@ proc addInstruction(stream: var seq[uint32]; opCode: SpvOp; operands: varargs[ui
   stream.add(operands)
 
 proc writeOutput(m: SpirvModule) =
-  let outFile = changeFileExt(completeCFilePath(m.config, m.filename), "spv")
+  let outFile = changeFileExt(completeCFilePath(m.config, m.filename.AbsoluteFile), "spv")
 
   var file: File
-  if file.open(outFile, fmWrite):
+  if file.open(outFile.string, fmWrite):
     discard file.writeBuffer(addr m.words[0], m.words.len * sizeof(uint32))
     file.close()
   else:
