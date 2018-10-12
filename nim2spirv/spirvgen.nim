@@ -413,34 +413,40 @@ proc genFunction(m: SpirvModule; s: PSym): SpirvFunction =
   result.usedVariables = initSet[SpirvVariable]()
   result.symbol = s
   result.id = m.generateId()
-  let labelId = m.generateId()
+  m.functions.add(s.id, result)  
 
-  m.functions.add(s.id, result)
-
+  # Debug info
   m.nameWords.addInstruction(SpvOpName, @[result.id] & s.name.s.toWords())
 
+  # Header
+  let labelId = m.generateId()
   result.words.addInstruction(SpvOpFunction, result.typ.returnType, result.id, 0'u32, result.typ.id)
   result.words.addInstruction(SpvOpLabel, labelId)
-
-  let previousFunction = m.currentFunction
-  m.currentFunction = result
   
-  let hasResult = result.typ.returnType != 0
+  # Create the implicit result variable
+  let hasResult = result.typ.returnType == m.genVoidType()
   if hasResult:
     new(result.resultVariable)
     result.resultVariable.id = m.generateId()
     result.resultVariable.storageClass = SpvStorageClassFunction
     #m.variables.add(result.symbol.id, result) # Not visible
 
-  let returnValue = m.genNode(s.getBody(), hasResult)
-  if hasResult and returnValue != 0:
-    result.words.addInstruction(SpvOpReturnValue, returnValue)
-
+  # Generate the function  body
+  let previousFunction = m.currentFunction
+  m.currentFunction = result
+  var returnValue = m.genNode(s.getBody(), hasResult)
   m.currentFunction = previousFunction
 
-  if result.typ.returnType == m.genVoidType():
+  # Return the result. This can be the value of the body, if it's an expression, or the value of the result variable.
+  if hasResult:
+    if returnValue == 0:
+      returnValue = result.resultVariable.id
+    m.words.addInstruction(SpvOpLoad, result.typ.returnType, returnValue, result.resultVariable.id)
+    m.words.addInstruction(SpvOpReturnValue, returnValue)
+  else:
     result.words.addInstruction(SpvOpReturn)
-  result.words.addInstruction(SpvOpFunctionEnd)  
+
+  result.words.addInstruction(SpvOpFunctionEnd)
 
 proc genIdentDefs(m: SpirvModule; n: PNode): SpirvVariable =
 
