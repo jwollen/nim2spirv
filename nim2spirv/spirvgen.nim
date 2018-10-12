@@ -62,6 +62,8 @@ type
   SpirvFunction = ref object
     symbol: PSym
     id: SpirvId
+    typ: SpirvFunctionType
+    resultVariable: SpirvVariable
     words: seq[uint32]
     usedVariables: HashSet[SpirvVariable]
 
@@ -75,6 +77,17 @@ type
     id: SpirvId
     returnType: SpirvId
     argTypes: seq[SpirvId]
+
+  InstructionKind = enum
+    Goto, Fork, Use
+
+  SpirvControlFlowInstruction = object
+    n: PNode
+    case kind: InstructionKind:
+      of Use: sym: PSym
+      else: dest: int
+
+  SpirvControlFlowGraph = seq[SpirvControlFlowInstruction]
 
 proc hash(self: SpvStorageClass): Hash = hash(self.ord)
 
@@ -261,7 +274,6 @@ proc genType(m: SpirvModule; t: PType): SpirvId =
 
         let src = member.sym.loc.lode
         if src != nil and src.kind == nkPragmaExpr:
-          echo src[1]
           for pragma in src[1]:
             if pragma.kind == nkSym:
               case pragma.sym.name.s:
@@ -396,9 +408,8 @@ proc genFunction(m: SpirvModule; s: PSym): SpirvFunction =
   if m.functions.contains(s.id):
     return m.functions[s.id]
 
-  let functionType = m.genFunctionType(s.typ)
-
   new(result)
+  result.typ = m.genFunctionType(s.typ)
   result.usedVariables = initSet[SpirvVariable]()
   result.symbol = s
   result.id = m.generateId()
@@ -408,14 +419,26 @@ proc genFunction(m: SpirvModule; s: PSym): SpirvFunction =
 
   m.nameWords.addInstruction(SpvOpName, @[result.id] & s.name.s.toWords())
 
-  result.words.addInstruction(SpvOpFunction, functionType.returnType, result.id, 0'u32, functionType.id)
+  result.words.addInstruction(SpvOpFunction, result.typ.returnType, result.id, 0'u32, result.typ.id)
   result.words.addInstruction(SpvOpLabel, labelId)
 
+  let previousFunction = m.currentFunction
   m.currentFunction = result
-  discard m.genNode(s.getBody())
-  m.currentFunction = nil
+  
+  let hasResult = result.typ.returnType != 0
+  if hasResult:
+    new(result.resultVariable)
+    result.resultVariable.id = m.generateId()
+    result.resultVariable.storageClass = SpvStorageClassFunction
+    #m.variables.add(result.symbol.id, result) # Not visible
 
-  if functionType.returnType == m.genVoidType():
+  let returnValue = m.genNode(s.getBody(), hasResult)
+  if hasResult and returnValue != 0:
+    result.words.addInstruction(SpvOpReturnValue, returnValue)
+
+  m.currentFunction = previousFunction
+
+  if result.typ.returnType == m.genVoidType():
     result.words.addInstruction(SpvOpReturn)
   result.words.addInstruction(SpvOpFunctionEnd)  
 
@@ -601,8 +624,13 @@ proc genMagic(m: SpirvModule; n: PNode): SpirvId =
 
   m.genIntrinsic(op, n)
 
-proc genSons(m: SpirvModule; n: PNode) =
-  for s in n: discard m.genNode(s)
+proc genSons(m: SpirvModule; n: PNode, load: bool = false): SpirvId =
+  for i in 0 ..< n.len - 1:
+    discard m.genNode(n[i], false)
+
+  # The result of a statement list is the value of the last statement (if it is an expression statement)
+  if n.len > 0:
+    return m.genNode(n.lastSon, load)
 
 proc genNode(m: SpirvModule; n: PNode, load: bool = false): SpirvId =
 
@@ -619,10 +647,14 @@ proc genNode(m: SpirvModule; n: PNode, load: bool = false): SpirvId =
       return m.genNode(n[0])
 
     of nkSym:
-      if m.variables.contains(n.sym.id):
-        let variable = m.variables[n.sym.id]
+      var variable: SpirvVariable
+      if n.sym.kind == skResult:
+        variable = m.currentFunction.resultVariable
+      elif m.variables.contains(n.sym.id):
+        variable = m.variables[n.sym.id]
         m.currentFunction.usedVariables.incl(variable)
 
+      if variable != nil:
         if load:
           result = m.generateId()
           let resultType = m.genType(n.typ)
@@ -630,9 +662,9 @@ proc genNode(m: SpirvModule; n: PNode, load: bool = false): SpirvId =
         else:
           return variable.id
       else:
-        discard # TODO: Error, unknown symbol
+        internalError(m.config, "Unknown symbol " & $n.sym.name.s)
 
-    of nkAsgn:
+    of nkAsgn, nkFastAsgn:
       m.words.addInstruction(SpvOpStore, m.genNode(n[0]), m.genNode(n[1], true))
 
     of nkDotExpr:
@@ -648,6 +680,16 @@ proc genNode(m: SpirvModule; n: PNode, load: bool = false): SpirvId =
       m.words.addInstruction(SpvOpAccessChain, m.genPointerType(resultType, variable.storageClass), temp, variable.id,
         m.genConstant(m.genType(getSysType(m.g.graph, unknownLineInfo(), tyUint32)), n[1].sym.position.uint32))
       m.words.addInstruction(SpvOpLoad, resultType, result, temp)
+
+    of nkReturnStmt:
+      if n.len > 0 and n[0].kind == nkEmpty:
+        m.words.addInstruction(SpvOpReturnValue, m.genNode(n[0], true))
+      elif m.currentFunction.resultVariable != nil:
+        var temp: SpirvId
+        m.words.addInstruction(SpvOpLoad, m.currentFunction.typ.returnType, temp, m.currentFunction.resultVariable.id)
+        m.words.addInstruction(SpvOpReturnValue, temp)
+      else:
+        m.words.addInstruction(SpvOpReturn)
 
     of nkCallKinds:
 
@@ -680,7 +722,11 @@ proc genNode(m: SpirvModule; n: PNode, load: bool = false): SpirvId =
         m.words.addInstruction(SpvOpLoad, resultType, result, temp)
 
       elif sfImportc notin n[0].sym.flags:
-        internalError(m.config, "Not implemented: User defined functions") # TODO: Handle user functions
+        let function = m.genFunction(n[0].sym)
+        var args = newSeq[SpirvId](n.len - 1)
+        for i in 1 ..< n.len:
+          args[i - 1] = m.genNode(n[i])
+        m.words.addInstruction(SpvOpFunctionCall, @[function.typ.returnType, result] & args)
 
       else:
         # TODO: Build lookup
@@ -690,7 +736,6 @@ proc genNode(m: SpirvModule; n: PNode, load: bool = false): SpirvId =
 
         internalError(m.config, "Unhandled SPIR-V intrinsic " & $n[0].sym.loc.r)
 
-    #of nkIdentDefs: discard m.genIdentDefs(n)
     of nkProcDef, nkFuncDef, nkMethodDef, nkIteratorDef, nkConverterDef: #m.genProcDef(n)
 
       let s = n.sons[namePos].sym
@@ -732,8 +777,9 @@ proc genNode(m: SpirvModule; n: PNode, load: bool = false): SpirvId =
     of nkVarSection, nkLetSection, nkConstSection: #m.genSons(n)
       for child in n.sons:
         discard m.genIdentDefs(child)
-      discard
-    of nkStmtList: m.genSons(n)
+
+    of nkStmtList:
+      return m.genSons(n, load)
 
     else: discard # internalError(n.info, "Unhandled node: " & $n)
 
