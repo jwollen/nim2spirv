@@ -9,7 +9,7 @@ import ../compiler/[
   cgmeth, lowerings, sighashes, modulegraphs, lineinfos, pathutils]
 
 import
-  spirvTypes, glslTypes, openclTypes
+  spirvTypes, glslTypes, openclTypes, spirvDfa
 
 type
   SpirvId = uint32
@@ -36,6 +36,7 @@ type
     fileNames: Table[FileIndex, SpirvId]
     entryPoints: seq[tuple[function: SpirvFunction; executionModel: SpvExecutionModel]]
     variables: Table[int, SpirvVariable]
+    parameters: Table[int, SpirvId]
     functions: Table[int, SpirvFunction]
     functionTypes: seq[SpirvFunctionType]
 
@@ -116,6 +117,7 @@ proc rawNewModule(g: SpirvModuleList; module: PSym, filename: string): SpirvModu
   result.fileNames = initTable[FileIndex, SpirvId]()
   result.functions = initTable[int, SpirvFunction]()
   result.variables = initTable[int, SpirvVariable]()
+  result.parameters = initTable[int, SpirvId]()
   result.pointerTypes = initTable[(SpirvId, SpvStorageClass), SpirvId]()
   result.intConstants = initTable[(SpirvId, BiggestInt), SpirvId]()
   result.floatConstants = initTable[(SpirvId, BiggestFloat), SpirvId]()
@@ -368,7 +370,8 @@ proc genBoolConstant(m: SpirvModule; value: bool): SpirvId =
     else: m.falseConstant = result
     m.constantWords.addInstruction(op, result)
 
-proc genParamType(m: SpirvModule; t: PType): SpirvId = discard
+proc genParamType(m: SpirvModule; t: PType): SpirvId =
+  m.genPointerType(m.genType(t), SpvStorageClassFunction)
 
 proc genFunctionType(m: SpirvModule; t: PType): SpirvFunctionType =
 
@@ -379,9 +382,9 @@ proc genFunctionType(m: SpirvModule; t: PType): SpirvFunctionType =
   var argTypes = newSeq[SpirvId]()
 
   for param in t.procParams():
-    let paramType = param.sym.typ.skipTypes({ tyGenericInst, tyAlias, tySink })
+    let paramType = param.sym.typ#.skipTypes({ tyGenericInst, tyAlias, tySink })
     argTypes.add(m.genParamType(paramType))
-
+    
     # if skipTypes(t, {tyVar}).kind in { tyOpenArray, tyVarargs }:
     #   argTypes.add(m.intType)  # Extra length parameter
 
@@ -401,7 +404,7 @@ proc genFunctionType(m: SpirvModule; t: PType): SpirvFunctionType =
   result.argTypes = argTypes
   m.functionTypes.add(result)
 
-  m.typeWords.addInstruction(SpvOpTypeFunction, result.id, returnType) 
+  m.typeWords.addInstruction(SpvOpTypeFunction, @[result.id, returnType] & argTypes) 
 
 proc genFunction(m: SpirvModule; s: PSym): SpirvFunction =
   
@@ -421,28 +424,43 @@ proc genFunction(m: SpirvModule; s: PSym): SpirvFunction =
   # Header
   let labelId = m.generateId()
   result.words.addInstruction(SpvOpFunction, result.typ.returnType, result.id, 0'u32, result.typ.id)
+
+  for i, paramType in result.typ.argTypes:
+    let paramId = m.generateId()
+    result.words.addInstruction(SpvOpFunctionParameter, paramType, paramId)
+    let paramSym = s.typ.n[i + 1].sym
+    m.parameters[paramSym.id] = paramId
+
+    m.nameWords.addInstruction(SpvOpName, @[paramId] & paramSym.name.s.toWords())
+
   result.words.addInstruction(SpvOpLabel, labelId)
   
   # Create the implicit result variable
-  let hasResult = result.typ.returnType == m.genVoidType()
+  let hasResult = result.typ.returnType != m.genVoidType()
   if hasResult:
     new(result.resultVariable)
     result.resultVariable.id = m.generateId()
     result.resultVariable.storageClass = SpvStorageClassFunction
+
+    result.words.addInstruction(SpvOpVariable, m.genPointerType(result.typ.returnType, SpvStorageClassFunction), result.resultVariable.id, result.resultVariable.storageClass.uint32)
+    m.nameWords.addInstruction(SpvOpName, @[result.resultVariable.id] & "result".toWords())
     #m.variables.add(result.symbol.id, result) # Not visible
 
   # Generate the function  body
   let previousFunction = m.currentFunction
   m.currentFunction = result
+
+  m.g.graph.dfa(s, s.getBody())
+
   var returnValue = m.genNode(s.getBody(), hasResult)
   m.currentFunction = previousFunction
 
   # Return the result. This can be the value of the body, if it's an expression, or the value of the result variable.
   if hasResult:
     if returnValue == 0:
-      returnValue = result.resultVariable.id
-    m.words.addInstruction(SpvOpLoad, result.typ.returnType, returnValue, result.resultVariable.id)
-    m.words.addInstruction(SpvOpReturnValue, returnValue)
+      returnValue = m.generateId()
+      result.words.addInstruction(SpvOpLoad, result.typ.returnType, returnValue, result.resultVariable.id)
+    result.words.addInstruction(SpvOpReturnValue, returnValue)
   else:
     result.words.addInstruction(SpvOpReturn)
 
@@ -653,20 +671,25 @@ proc genNode(m: SpirvModule; n: PNode, load: bool = false): SpirvId =
       return m.genNode(n[0])
 
     of nkSym:
-      var variable: SpirvVariable
+      var variableId: SpirvId
       if n.sym.kind == skResult:
-        variable = m.currentFunction.resultVariable
+        variableId = m.currentFunction.resultVariable.id
+
+      elif n.sym.kind == skParam:
+        variableId = m.parameters[n.sym.id]
+
       elif m.variables.contains(n.sym.id):
-        variable = m.variables[n.sym.id]
+        let variable = m.variables[n.sym.id]
+        variableId = variable.id
         m.currentFunction.usedVariables.incl(variable)
 
-      if variable != nil:
+      if variableId != 0:
         if load:
           result = m.generateId()
           let resultType = m.genType(n.typ)
-          m.words.addInstruction(SpvOpLoad, resultType, result, variable.id)
+          m.words.addInstruction(SpvOpLoad, resultType, result, variableId)
         else:
-          return variable.id
+          return variableId
       else:
         internalError(m.config, "Unknown symbol " & $n.sym.name.s)
 
@@ -691,7 +714,7 @@ proc genNode(m: SpirvModule; n: PNode, load: bool = false): SpirvId =
       if n.len > 0 and n[0].kind == nkEmpty:
         m.words.addInstruction(SpvOpReturnValue, m.genNode(n[0], true))
       elif m.currentFunction.resultVariable != nil:
-        var temp: SpirvId
+        var temp = m.generateId()
         m.words.addInstruction(SpvOpLoad, m.currentFunction.typ.returnType, temp, m.currentFunction.resultVariable.id)
         m.words.addInstruction(SpvOpReturnValue, temp)
       else:
@@ -731,8 +754,15 @@ proc genNode(m: SpirvModule; n: PNode, load: bool = false): SpirvId =
         let function = m.genFunction(n[0].sym)
         var args = newSeq[SpirvId](n.len - 1)
         for i in 1 ..< n.len:
-          args[i - 1] = m.genNode(n[i])
-        m.words.addInstruction(SpvOpFunctionCall, @[function.typ.returnType, result] & args)
+          let
+            valueId = m.genNode(n[i])
+            varId = m.generateId()
+          m.words.addInstruction(SpvOpVariable, m.genPointerType(m.genType(n[i].typ), SpvStorageClassFunction) , varId, SpvStorageClassFunction.uint32)
+          m.words.addInstruction(SpvOpStore, varId, m.genNode(n[i], true))
+          args[i - 1] = varId
+
+        result = m.generateId()
+        m.words.addInstruction(SpvOpFunctionCall, @[function.typ.returnType, result, function.id] & args)
 
       else:
         # TODO: Build lookup
