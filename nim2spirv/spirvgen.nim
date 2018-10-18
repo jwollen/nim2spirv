@@ -648,6 +648,61 @@ proc genMagic(m: SpirvModule; n: PNode): SpirvId =
 
   m.genIntrinsic(op, n)
 
+proc genIfRecursive(m: SpirvModule; n: PNode; index: int; resultId: SpirvId) =
+
+  let isExpression = n.kind == nkIfExpr
+  if n[index].kind in { nkElifBranch, nkElifExpr }:
+    let isLastBranch = index + 1 >= n.len
+
+    let
+      mergeId = m.generateId()
+      trueId = m.generateId()
+      falseId = if isLastBranch: mergeId else: m.generateId()
+
+    # TODO: Flatten/don't flatten
+    # TODO: Branch weights? Likely/unlikely?
+    m.words.addInstruction(SpvOpSelectionMerge, mergeId, SpvSelectionControlMaskNone.uint32)
+    m.words.addInstruction(SpvOpBranchConditional, m.genNode(n[index][0], true), trueId, falseId)
+
+    # True branch
+    m.words.addInstruction(SpvOpLabel, trueId)
+    let branchResult = m.genNode(n[index][1], isExpression)
+    if isExpression:
+      m.words.addInstruction(SpvOpStore, resultId, branchResult)
+
+    # False branch
+    m.words.addInstruction(SpvOpLabel, falseId)
+    if not isLastBranch:
+      m.words.addInstruction(SpvOpBranch, mergeId) 
+      m.genIfRecursive(n, index + 1, resultId)
+
+    m.words.addInstruction(SpvOpLabel, mergeId)
+
+  # Else branch
+  else:
+    let branchResult = m.genNode(n[index][0], isExpression)
+    if isExpression:
+      m.words.addInstruction(SpvOpStore, resultId, branchResult)
+
+proc genIf(m: SpirvModule; n: PNode; load: bool): SpirvId =
+  var
+    resultId: SpirvId
+    resultType: SpirvId
+
+  # If this is an expression, store the branch result in a temporary variable
+  if n.kind == nkIfExpr:
+    resultId = m.generateId()
+    resultType = m.genType(n.typ)
+    m.words.addInstruction(SpvOpVariable, m.genPointerType(resultType, SpvStorageClassFunction), resultId, SpvStorageClassFunction.uint32)
+
+  # Generate branches, recursively creating structured control-flow blocks
+  m.genIfRecursive(n, 0, resultId)
+
+  # Load and return the temporary variable's value
+  if n.kind == nkIfExpr:
+    result = m.generateId()
+    m.words.addInstruction(SpvOpLoad, resultType, result, resultId)
+
 proc genSons(m: SpirvModule; n: PNode, load: bool = false): SpirvId =
   for i in 0 ..< n.len - 1:
     discard m.genNode(n[i], false)
@@ -816,6 +871,8 @@ proc genNode(m: SpirvModule; n: PNode, load: bool = false): SpirvId =
 
     of nkStmtList:
       return m.genSons(n, load)
+
+    of nkIfStmt, nkIfExpr: return m.genIf(n, load)
 
     else: discard # internalError(n.info, "Unhandled node: " & $n)
 
