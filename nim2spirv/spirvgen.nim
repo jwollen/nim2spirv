@@ -191,7 +191,7 @@ proc genVoidType(m: SpirvModule): SpirvId =
 
 proc genBoolType(m: SpirvModule): SpirvId =
   if m.boolType == 0:
-    m.voidType = m.generateId()
+    m.boolType = m.generateId()
     m.typeWords.addInstruction(SpvOpTypeBool, m.boolType)
   return m.boolType
 
@@ -368,7 +368,7 @@ proc genBoolConstant(m: SpirvModule; value: bool): SpirvId =
     let op = if value: SpvOpConstantTrue else: SpvOpConstantFalse
     if value: m.trueConstant = result
     else: m.falseConstant = result
-    m.constantWords.addInstruction(op, result)
+    m.constantWords.addInstruction(op, m.genBoolType(), result)
 
 proc genParamType(m: SpirvModule; t: PType): SpirvId =
   m.genPointerType(m.genType(t), SpvStorageClassFunction)
@@ -658,7 +658,7 @@ proc genIfRecursive(m: SpirvModule; n: PNode; index: int; resultId: SpirvId) =
       mergeId = m.generateId()
       trueId = m.generateId()
       falseId = if isLastBranch: mergeId else: m.generateId()
-
+      
     # TODO: Flatten/don't flatten
     # TODO: Branch weights? Likely/unlikely?
     m.words.addInstruction(SpvOpSelectionMerge, mergeId, SpvSelectionControlMaskNone.uint32)
