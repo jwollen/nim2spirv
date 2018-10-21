@@ -703,6 +703,57 @@ proc genIf(m: SpirvModule; n: PNode; load: bool): SpirvId =
     result = m.generateId()
     m.words.addInstruction(SpvOpLoad, resultType, result, resultId)
 
+proc genBlock(m: SpirvModule; n: PNode; load: bool): SpirvId =
+  discard
+  # result = m.genNode(n[1], load)
+  # m.words.addInstruction(SpvOpLabel, )
+  # return result
+
+proc genWhile(m: SpirvModule; n: PNode): SpirvId =
+  let
+    headerId = m.generateId()
+    bodyId = m.generateId()
+    continueId = m.generateId()
+    mergeId = m.generateId()
+
+  # Header block and loop condition
+  m.words.addInstruction(SpvOpLabel, headerId) # TODO: This should be the surrounding blocks id
+  m.words.addInstruction(SpvOpLoopMerge, mergeId, continueId, SpvLoopControlMaskNone.uint32)
+  m.words.addInstruction(SpvOpBranchConditional, m.genNode(n[0], true), bodyId, mergeId)
+
+  # Loop body
+  m.words.addInstruction(SpvOpLabel, bodyId)
+  discard m.genNode(n[1])
+
+  # Continue target and back-edge block
+  m.words.addInstruction(SpvOpLabel, continueId)
+  m.words.addInstruction(SpvOpBranch, headerId)
+
+  # Merge block
+  m.words.addInstruction(SpvOpLabel, mergeId)
+
+proc genNestedBreak(m: SpirvModule; blockSym: PSym; depth: int): SpirvId =
+
+  # If this block has a break path to the target block, reuse it
+  let b = m.currentBlocks[^(depth + 1)]
+  if blockSym.id in b.breakTargets:
+    return b.breakTargets[blockSym.id]
+
+  # Otherwise generate an id for the target label.
+  # The label will be emitted when the target block gets finished up.
+  let
+    targetId = m.generateId()
+    parent
+  b.breakTargets.add(blockSym)
+  m.genNestedBreak(blockSym, depth + 1)
+  for b in countdown(m.currentBlocks.high, 0):
+    var breakTarget = breakTargets
+    if blockSym.id in b.breakTargets
+
+proc genBreak(m: SpirvModule; n: PNode): SpirvId =
+  let targetId = m.genNestedBreak(n[0].sym, 0)
+  m.words.addInstruction(SpvOpBranch, targetId)
+
 proc genSons(m: SpirvModule; n: PNode, load: bool = false): SpirvId =
   for i in 0 ..< n.len - 1:
     discard m.genNode(n[i], false)
@@ -868,6 +919,8 @@ proc genNode(m: SpirvModule; n: PNode, load: bool = false): SpirvId =
     of nkVarSection, nkLetSection, nkConstSection: #m.genSons(n)
       for child in n.sons:
         discard m.genIdentDefs(child)
+
+    of nkBlockStmt: return m.genBlock(n, load)
 
     of nkStmtList:
       return m.genSons(n, load)
