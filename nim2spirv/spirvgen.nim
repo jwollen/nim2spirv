@@ -665,7 +665,7 @@ proc genMagic(m: SpirvModule; n: PNode): SpirvId =
     # of mSpawn: result = m.genMagicSpawn(n)
     # of mDeepCopy: m.genMagicDeepCopy(n)
     # of mGetTypeInfo: result = m.genMagicGetTypeInfo(n)
-    else: internalError(m.config, n.info, "Unhandled magic: " & $n[1].sym.magic)
+    else: internalError(m.config, n.info, "Unhandled magic: " & $n[0].sym.magic)
 
   m.genIntrinsic(op, n)
 
