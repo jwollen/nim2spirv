@@ -491,8 +491,9 @@ proc genIdentDefs(m: SpirvModule; n: PNode): SpirvVariable =
   else:
     result.storageClass = SpvStorageClassFunction
 
+  # No lode for skForVar
   let src = n[0].sym.loc.lode
-  if src.kind == nkPragmaExpr:
+  if src != nil and src.kind == nkPragmaExpr:
     
     for pragma in src[1]:
       if pragma.kind == nkExprColonExpr and pragma[0].kind == nkSym:
@@ -692,8 +693,8 @@ proc genIfRecursive(m: SpirvModule; n: PNode; index: int; resultId: SpirvId) =
       m.words.addInstruction(SpvOpStore, resultId, branchResult)
 
     # False branch
-    m.words.addInstruction(SpvOpLabel, falseId)
     if not isLastBranch:
+    m.words.addInstruction(SpvOpLabel, falseId)
       m.words.addInstruction(SpvOpBranch, mergeId) 
       m.genIfRecursive(n, index + 1, resultId)
 
@@ -711,6 +712,7 @@ proc genIf(m: SpirvModule; n: PNode; load: bool): SpirvId =
     resultType: SpirvId
 
   # If this is an expression, store the branch result in a temporary variable
+  # TODO: Use OpPhi
   if n.kind == nkIfExpr:
     resultId = m.generateId()
     resultType = m.genType(n.typ)
@@ -725,8 +727,7 @@ proc genIf(m: SpirvModule; n: PNode; load: bool): SpirvId =
     m.words.addInstruction(SpvOpLoad, resultType, result, resultId)
 
 proc genBlock(m: SpirvModule; n: PNode; load: bool): SpirvId =
-  discard
-  # result = m.genNode(n[1], load)
+  result = m.genNode(n[1], load)
   # m.words.addInstruction(SpvOpLabel, )
   # return result
 
@@ -753,27 +754,28 @@ proc genWhile(m: SpirvModule; n: PNode): SpirvId =
   # Merge block
   m.words.addInstruction(SpvOpLabel, mergeId)
 
-proc genNestedBreak(m: SpirvModule; blockSym: PSym; depth: int): SpirvId =
 
-  # If this block has a break path to the target block, reuse it
-  let b = m.currentBlocks[^(depth + 1)]
-  if blockSym.id in b.breakTargets:
-    return b.breakTargets[blockSym.id]
+# proc genNestedBreak(m: SpirvModule; blockSym: PSym; depth: int): SpirvId =
 
-  # Otherwise generate an id for the target label.
-  # The label will be emitted when the target block gets finished up.
-  let
-    targetId = m.generateId()
-    parent
-  b.breakTargets.add(blockSym)
-  m.genNestedBreak(blockSym, depth + 1)
-  for b in countdown(m.currentBlocks.high, 0):
-    var breakTarget = breakTargets
-    if blockSym.id in b.breakTargets
+#   # If this block has a break path to the target block, reuse it
+#   let b = m.currentBlocks[^(depth + 1)]
+#   if blockSym.id in b.breakTargets:
+#     return b.breakTargets[blockSym.id]
 
-proc genBreak(m: SpirvModule; n: PNode): SpirvId =
-  let targetId = m.genNestedBreak(n[0].sym, 0)
-  m.words.addInstruction(SpvOpBranch, targetId)
+#   # Otherwise generate an id for the target label.
+#   # The label will be emitted when the target block gets finished up.
+#   let
+#     targetId = m.generateId()
+#     parent
+#   b.breakTargets.add(blockSym)
+#   m.genNestedBreak(blockSym, depth + 1)
+#   for b in countdown(m.currentBlocks.high, 0):
+#     var breakTarget = breakTargets
+#     if blockSym.id in b.breakTargets
+
+# proc genBreak(m: SpirvModule; n: PNode): SpirvId =
+#   let targetId = m.genNestedBreak(n[0].sym, 0)
+#   m.words.addInstruction(SpvOpBranch, targetId)
 
 proc genSons(m: SpirvModule; n: PNode, load: bool = false): SpirvId =
   for i in 0 ..< n.len - 1:
@@ -790,6 +792,13 @@ proc genNode(m: SpirvModule; n: PNode, load: bool = false): SpirvId =
 
   case n.kind:
     of nkEmpty: discard
+
+    of nkCommentStmt, nkIteratorDef, nkIncludeStmt,
+      nkImportStmt, nkImportExceptStmt, nkExportStmt, nkExportExceptStmt,
+      nkFromStmt, nkTemplateDef, nkMacroDef, nkStaticStmt:
+      discard
+
+    of nkTypeSection: discard
 
     # TODO: Interpret as expected type, if it's used in an expression, so no cast is necessary
     of nkCharLit..nkFloat128Lit: return m.genConstant(n)
@@ -899,7 +908,7 @@ proc genNode(m: SpirvModule; n: PNode, load: bool = false): SpirvId =
 
         internalError(m.config, "Unhandled SPIR-V intrinsic " & $n[0].sym.loc.r)
 
-    of nkProcDef, nkFuncDef, nkMethodDef, nkIteratorDef, nkConverterDef: #m.genProcDef(n)
+    of nkProcDef, nkFuncDef, nkConverterDef: #m.genProcDef(n)
 
       let s = n.sons[namePos].sym
       if sfImportc in s.flags:
@@ -948,7 +957,13 @@ proc genNode(m: SpirvModule; n: PNode, load: bool = false): SpirvId =
 
     of nkIfStmt, nkIfExpr: return m.genIf(n, load)
 
-    else: discard # internalError(n.info, "Unhandled node: " & $n)
+    of nkWhileStmt: return m.genWhile(n)
+
+    of nkBreakStmt: discard
+
+    of nkDiscardStmt: return m.genNode(n[0])
+
+    else: internalError(m.g.config, n.info, "Unhandled node: " & $n & " (" & $n.kind & ")")
 
 proc myProcess(b: PPassContext, n: PNode): PNode =
   result = n
