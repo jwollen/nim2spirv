@@ -540,7 +540,14 @@ proc genMagic(m: SpirvModule; n: PNode): SpirvId =
     # of mOf: result = m.genMagicOf(n)
     # of mEcho: m.genMagicEcho(n)
     # of mUnaryLt: result = m.genMagicUnaryLt(n)
-    # of mInc: m.genIntrinsic()
+    of mInc:
+      let
+        op = if n[1].typ.kind in tyFloat..tyFloat128: SpvOpFAdd else: SpvOpIAdd
+        temp = m.generateId()
+      m.words.addInstruction(op, @[m.genType(n[1].typ), temp, m.genNode(n[1], true), m.genNode(n[2], true)])
+      m.words.addInstruction(SpvOpStore, m.genNode(n[1]), temp)
+      return
+      
     # of mDec: m.genIntrinsic()
     # of mOrd: result = m.genMagicOrd(n)
     # of mNew: m.genMagicNew(n)
