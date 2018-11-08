@@ -344,8 +344,19 @@ proc genConstant(m: SpirvModule; valueType: SpirvId; value: SomeFloat): SpirvId 
   m.floatConstants.add(key, result)
   m.constantWords.addInstruction(SpvOpConstant, @[valueType, result] & value.toWords())
   
+proc genBoolConstant(m: SpirvModule; value: bool): SpirvId =
+  result = if value: m.trueConstant else: m.falseConstant
+  if result == 0:
+    result = m.generateId()
+    let op = if value: SpvOpConstantTrue else: SpvOpConstantFalse
+    if value: m.trueConstant = result
+    else: m.falseConstant = result
+    m.constantWords.addInstruction(op, m.genBoolType(), result)
+
 proc genConstant(m: SpirvModule; n: PNode): SpirvId =
   case n.typ.kind:
+    of tyBool: return m.genBoolConstant(n.intVal != 0)
+
     of tyInt8: return m.genConstant(m.genType(n.typ), n.intVal.int8)
     of tyInt16: return m.genConstant(m.genType(n.typ), n.intVal.int16)
     of tyInt, tyInt32: return m.genConstant(m.genType(n.typ), n.intVal.int32)
@@ -774,7 +785,7 @@ proc genNode(m: SpirvModule; n: PNode, load: bool = false): SpirvId =
     of nkEmpty: discard
 
     # TODO: Interpret as expected type, if it's used in an expression, so no cast is necessary
-    of nkIntLit .. nkFloat128Lit: return m.genConstant(n)
+    of nkCharLit..nkFloat128Lit: return m.genConstant(n)
 
     of nkHiddenAddr:
       return m.genNode(n[0])
