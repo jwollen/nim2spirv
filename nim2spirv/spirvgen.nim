@@ -6,10 +6,10 @@ import ../compiler/[
   ast, astalgo, platform, magicsys, extccomp, trees, bitsets,
   nversion, nimsets, msgs, idents, types, options, ropes,
   passes, ccgutils, wordrecg, renderer, rodutils, msgs,
-  cgmeth, lowerings, sighashes, modulegraphs, lineinfos, pathutils]
+  cgmeth, lowerings, sighashes, modulegraphs, lineinfos, pathutils, transf]
 
 import
-  spirvTypes, glslTypes, openclTypes, spirvDfa
+  spirvTypes, glslTypes, openclTypes#, spirvDfa
 
 type
   SpirvId = uint32
@@ -411,6 +411,9 @@ proc genFunction(m: SpirvModule; s: PSym): SpirvFunction =
   if m.functions.contains(s.id):
     return m.functions[s.id]
 
+  # Lazy transformation
+  let body = transformBody(m.g.graph, s, cache = false)
+
   new(result)
   result.typ = m.genFunctionType(s.typ)
   result.usedVariables = initSet[SpirvVariable]()
@@ -450,9 +453,9 @@ proc genFunction(m: SpirvModule; s: PSym): SpirvFunction =
   let previousFunction = m.currentFunction
   m.currentFunction = result
 
-  m.g.graph.dfa(s, s.getBody())
+  #m.g.graph.dfa(s, body)
 
-  var returnValue = m.genNode(s.getBody(), hasResult)
+  var returnValue = m.genNode(body, hasResult)
   m.currentFunction = previousFunction
 
   # Return the result. This can be the value of the body, if it's an expression, or the value of the result variable.
