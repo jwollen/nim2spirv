@@ -370,16 +370,7 @@ proc genConstant(m: SpirvModule; n: PNode): SpirvId =
     of tyFloat, tyFloat32: return m.genConstant(m.genType(n.typ), n.floatVal.float32)
     of tyFloat64: return m.genConstant(m.genType(n.typ), n.floatVal.float64)
 
-    else: discard
-
-proc genBoolConstant(m: SpirvModule; value: bool): SpirvId =
-  result = if value: m.trueConstant else: m.falseConstant
-  if result == 0:
-    result = m.generateId()
-    let op = if value: SpvOpConstantTrue else: SpvOpConstantFalse
-    if value: m.trueConstant = result
-    else: m.falseConstant = result
-    m.constantWords.addInstruction(op, m.genBoolType(), result)
+    else: internalError(m.g.config, "Unkhandle literal: " & $n & " (" & $n.typ.kind & ")")
 
 proc genParamType(m: SpirvModule; t: PType): SpirvId =
   m.genPointerType(m.genType(t), SpvStorageClassFunction)
