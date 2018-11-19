@@ -15,7 +15,7 @@ proc dfa*(g: ModuleGraph; owner: PSym; n: PNode) =
     d[i] = initIntSet()
     c[i] = initIntSet()
     case code[i].kind
-    of use, useWithinCall: u[i].incl(code[i].sym.id)
+    of use: u[i].incl(code[i].sym.id)
     of def: d[i].incl(code[i].sym.id)
     of fork, goto:
       let d = i+code[i].dest
@@ -77,7 +77,7 @@ proc dfa*(g: ModuleGraph; owner: PSym; n: PNode) =
         #if someChange:
         w.add pc + code[pc].dest
         inc pc
-      of use, useWithinCall:
+      of use:
         #if not d[prevPc].missingOrExcl():
         # someChange = true
         consuming = code[pc].sym.id
@@ -90,7 +90,7 @@ proc dfa*(g: ModuleGraph; owner: PSym; n: PNode) =
   when true: #defined(useDfa) and defined(debugDfa):
     var all = initIntSet()
     for i in 0..<code.len:
-      if code[i].kind in { def, use, useWithinCall }:
+      if code[i].kind in { def, use }:
         if not all.containsOrIncl(code[i].sym.id):
           echo code[i].sym.name.s & ": " & $code[i].sym.id
 

@@ -9,7 +9,7 @@ import ../compiler/[
   cgmeth, lowerings, sighashes, modulegraphs, lineinfos, pathutils, transf]
 
 import
-  spirvTypes, glslTypes, openclTypes#, spirvDfa
+  spirvTypes, glslTypes, openclTypes, spirvDfa
 
 type
   SpirvId = uint32
@@ -455,7 +455,7 @@ proc genFunction(m: SpirvModule; s: PSym): SpirvFunction =
   let previousFunction = m.currentFunction
   m.currentFunction = result
 
-  #m.g.graph.dfa(s, body)
+  m.g.graph.dfa(s, body)
 
   var returnValue = m.genNode(body, hasResult)
   m.currentFunction = previousFunction
@@ -685,7 +685,7 @@ proc genIfRecursive(m: SpirvModule; n: PNode; index: int; resultId: SpirvId) =
 
     # False branch
     if not isLastBranch:
-    m.words.addInstruction(SpvOpLabel, falseId)
+      m.words.addInstruction(SpvOpLabel, falseId)
       m.words.addInstruction(SpvOpBranch, mergeId) 
       m.genIfRecursive(n, index + 1, resultId)
 
@@ -783,7 +783,7 @@ proc genNode(m: SpirvModule; n: PNode, load: bool = false): SpirvId =
 
   case n.kind:
     of nkEmpty: discard
-
+    
     of nkCommentStmt, nkIteratorDef, nkIncludeStmt,
       nkImportStmt, nkImportExceptStmt, nkExportStmt, nkExportExceptStmt,
       nkFromStmt, nkTemplateDef, nkMacroDef, nkStaticStmt:
