@@ -6,10 +6,10 @@ import ../compiler/[
   ast, astalgo, platform, magicsys, extccomp, trees, bitsets,
   nversion, nimsets, msgs, idents, types, options, ropes,
   passes, ccgutils, wordrecg, renderer, rodutils, msgs,
-  cgmeth, lowerings, sighashes, modulegraphs, lineinfos]
+  cgmeth, lowerings, sighashes, modulegraphs, lineinfos, pathutils]
 
 import
-  spirvTypes, glslTypes, openclTypes
+  spirvTypes, glslTypes, openclTypes, spirvDfa
 
 type
   SpirvId = uint32
@@ -36,6 +36,7 @@ type
     fileNames: Table[FileIndex, SpirvId]
     entryPoints: seq[tuple[function: SpirvFunction; executionModel: SpvExecutionModel]]
     variables: Table[int, SpirvVariable]
+    parameters: Table[int, SpirvId]
     functions: Table[int, SpirvFunction]
     functionTypes: seq[SpirvFunctionType]
 
@@ -62,6 +63,8 @@ type
   SpirvFunction = ref object
     symbol: PSym
     id: SpirvId
+    typ: SpirvFunctionType
+    resultVariable: SpirvVariable
     words: seq[uint32]
     usedVariables: HashSet[SpirvVariable]
 
@@ -76,8 +79,20 @@ type
     returnType: SpirvId
     argTypes: seq[SpirvId]
 
-proc hash(v: SpirvVariable): Hash =
-  hash(v.id)
+  InstructionKind = enum
+    Goto, Fork, Use
+
+  SpirvControlFlowInstruction = object
+    n: PNode
+    case kind: InstructionKind:
+      of Use: sym: PSym
+      else: dest: int
+
+  SpirvControlFlowGraph = seq[SpirvControlFlowInstruction]
+
+proc hash(self: SpvStorageClass): Hash = hash(self.ord)
+
+proc hash(self: SpirvVariable): Hash = hash(self.id)
 
 template config*(m: SpirvModule): ConfigRef = m.g.config
 
@@ -102,6 +117,7 @@ proc rawNewModule(g: SpirvModuleList; module: PSym, filename: string): SpirvModu
   result.fileNames = initTable[FileIndex, SpirvId]()
   result.functions = initTable[int, SpirvFunction]()
   result.variables = initTable[int, SpirvVariable]()
+  result.parameters = initTable[int, SpirvId]()
   result.pointerTypes = initTable[(SpirvId, SpvStorageClass), SpirvId]()
   result.intConstants = initTable[(SpirvId, BiggestInt), SpirvId]()
   result.floatConstants = initTable[(SpirvId, BiggestFloat), SpirvId]()
@@ -127,10 +143,10 @@ proc addInstruction(stream: var seq[uint32]; opCode: SpvOp; operands: varargs[ui
   stream.add(operands)
 
 proc writeOutput(m: SpirvModule) =
-  let outFile = changeFileExt(completeCFilePath(m.config, m.filename), "spv")
+  let outFile = changeFileExt(completeCFilePath(m.config, m.filename.AbsoluteFile), "spv")
 
   var file: File
-  if file.open(outFile, fmWrite):
+  if file.open(outFile.string, fmWrite):
     discard file.writeBuffer(addr m.words[0], m.words.len * sizeof(uint32))
     file.close()
   else:
@@ -175,7 +191,7 @@ proc genVoidType(m: SpirvModule): SpirvId =
 
 proc genBoolType(m: SpirvModule): SpirvId =
   if m.boolType == 0:
-    m.voidType = m.generateId()
+    m.boolType = m.generateId()
     m.typeWords.addInstruction(SpvOpTypeBool, m.boolType)
   return m.boolType
 
@@ -260,7 +276,6 @@ proc genType(m: SpirvModule; t: PType): SpirvId =
 
         let src = member.sym.loc.lode
         if src != nil and src.kind == nkPragmaExpr:
-          echo src[1]
           for pragma in src[1]:
             if pragma.kind == nkSym:
               case pragma.sym.name.s:
@@ -353,9 +368,10 @@ proc genBoolConstant(m: SpirvModule; value: bool): SpirvId =
     let op = if value: SpvOpConstantTrue else: SpvOpConstantFalse
     if value: m.trueConstant = result
     else: m.falseConstant = result
-    m.constantWords.addInstruction(op, result)
+    m.constantWords.addInstruction(op, m.genBoolType(), result)
 
-proc genParamType(m: SpirvModule; t: PType): SpirvId = discard
+proc genParamType(m: SpirvModule; t: PType): SpirvId =
+  m.genPointerType(m.genType(t), SpvStorageClassFunction)
 
 proc genFunctionType(m: SpirvModule; t: PType): SpirvFunctionType =
 
@@ -366,9 +382,9 @@ proc genFunctionType(m: SpirvModule; t: PType): SpirvFunctionType =
   var argTypes = newSeq[SpirvId]()
 
   for param in t.procParams():
-    let paramType = param.sym.typ.skipTypes({ tyGenericInst, tyAlias, tySink })
+    let paramType = param.sym.typ#.skipTypes({ tyGenericInst, tyAlias, tySink })
     argTypes.add(m.genParamType(paramType))
-
+    
     # if skipTypes(t, {tyVar}).kind in { tyOpenArray, tyVarargs }:
     #   argTypes.add(m.intType)  # Extra length parameter
 
@@ -388,35 +404,67 @@ proc genFunctionType(m: SpirvModule; t: PType): SpirvFunctionType =
   result.argTypes = argTypes
   m.functionTypes.add(result)
 
-  m.typeWords.addInstruction(SpvOpTypeFunction, result.id, returnType) 
+  m.typeWords.addInstruction(SpvOpTypeFunction, @[result.id, returnType] & argTypes) 
 
 proc genFunction(m: SpirvModule; s: PSym): SpirvFunction =
   
   if m.functions.contains(s.id):
     return m.functions[s.id]
 
-  let functionType = m.genFunctionType(s.typ)
-
   new(result)
+  result.typ = m.genFunctionType(s.typ)
   result.usedVariables = initSet[SpirvVariable]()
   result.symbol = s
   result.id = m.generateId()
-  let labelId = m.generateId()
+  m.functions.add(s.id, result)  
 
-  m.functions.add(s.id, result)
-
+  # Debug info
   m.nameWords.addInstruction(SpvOpName, @[result.id] & s.name.s.toWords())
 
-  result.words.addInstruction(SpvOpFunction, functionType.returnType, result.id, 0'u32, functionType.id)
+  # Header
+  let labelId = m.generateId()
+  result.words.addInstruction(SpvOpFunction, result.typ.returnType, result.id, 0'u32, result.typ.id)
+
+  for i, paramType in result.typ.argTypes:
+    let paramId = m.generateId()
+    result.words.addInstruction(SpvOpFunctionParameter, paramType, paramId)
+    let paramSym = s.typ.n[i + 1].sym
+    m.parameters[paramSym.id] = paramId
+
+    m.nameWords.addInstruction(SpvOpName, @[paramId] & paramSym.name.s.toWords())
+
   result.words.addInstruction(SpvOpLabel, labelId)
+  
+  # Create the implicit result variable
+  let hasResult = result.typ.returnType != m.genVoidType()
+  if hasResult:
+    new(result.resultVariable)
+    result.resultVariable.id = m.generateId()
+    result.resultVariable.storageClass = SpvStorageClassFunction
 
+    result.words.addInstruction(SpvOpVariable, m.genPointerType(result.typ.returnType, SpvStorageClassFunction), result.resultVariable.id, result.resultVariable.storageClass.uint32)
+    m.nameWords.addInstruction(SpvOpName, @[result.resultVariable.id] & "result".toWords())
+    #m.variables.add(result.symbol.id, result) # Not visible
+
+  # Generate the function  body
+  let previousFunction = m.currentFunction
   m.currentFunction = result
-  discard m.genNode(s.getBody())
-  m.currentFunction = nil
 
-  if functionType.returnType == m.genVoidType():
+  m.g.graph.dfa(s, s.getBody())
+
+  var returnValue = m.genNode(s.getBody(), hasResult)
+  m.currentFunction = previousFunction
+
+  # Return the result. This can be the value of the body, if it's an expression, or the value of the result variable.
+  if hasResult:
+    if returnValue == 0:
+      returnValue = m.generateId()
+      result.words.addInstruction(SpvOpLoad, result.typ.returnType, returnValue, result.resultVariable.id)
+    result.words.addInstruction(SpvOpReturnValue, returnValue)
+  else:
     result.words.addInstruction(SpvOpReturn)
-  result.words.addInstruction(SpvOpFunctionEnd)  
+
+  result.words.addInstruction(SpvOpFunctionEnd)
 
 proc genIdentDefs(m: SpirvModule; n: PNode): SpirvVariable =
 
@@ -439,11 +487,12 @@ proc genIdentDefs(m: SpirvModule; n: PNode): SpirvVariable =
           of "descriptorset": m.decorationWords.addInstruction(SpvOpDecorate, result.id, SpvDecorationDescriptorSet.uint32, pragma[1].intVal.uint32)
           of "binding": m.decorationWords.addInstruction(SpvOpDecorate, result.id, SpvDecorationBinding.uint32, pragma[1].intVal.uint32)
           of "builtin":
-            var builtIn: SpvBuiltIn
-            case pragma[1].ident.s.normalize():
-              of "position": builtIn = SpvBuiltInPosition 
-              else: discard
-            m.decorationWords.addInstruction(SpvOpDecorate, result.id, SpvDecorationBuiltIn.uint32, builtIn.uint32)
+            block found:
+              for builtIn in SpvBuiltIn:
+                if ($builtIn).normalize().startsWith(("SpvBuiltIn" & pragma[1].ident.s).normalize()):
+                  m.decorationWords.addInstruction(SpvOpDecorate, result.id, SpvDecorationBuiltIn.uint32, builtIn.uint32)
+                  break found
+              internalError(m.g.config, pragma[1].info, "Unhandled value: " & $pragma[1])
           else: discard
       elif pragma.kind == nkSym:
         case pragma.sym.name.s:
@@ -600,8 +649,119 @@ proc genMagic(m: SpirvModule; n: PNode): SpirvId =
 
   m.genIntrinsic(op, n)
 
-proc genSons(m: SpirvModule; n: PNode) =
-  for s in n: discard m.genNode(s)
+proc genIfRecursive(m: SpirvModule; n: PNode; index: int; resultId: SpirvId) =
+
+  let isExpression = n.kind == nkIfExpr
+  if n[index].kind in { nkElifBranch, nkElifExpr }:
+    let isLastBranch = index + 1 >= n.len
+
+    let
+      mergeId = m.generateId()
+      trueId = m.generateId()
+      falseId = if isLastBranch: mergeId else: m.generateId()
+      
+    # TODO: Flatten/don't flatten
+    # TODO: Branch weights? Likely/unlikely?
+    m.words.addInstruction(SpvOpSelectionMerge, mergeId, SpvSelectionControlMaskNone.uint32)
+    m.words.addInstruction(SpvOpBranchConditional, m.genNode(n[index][0], true), trueId, falseId)
+
+    # True branch
+    m.words.addInstruction(SpvOpLabel, trueId)
+    let branchResult = m.genNode(n[index][1], isExpression)
+    if isExpression:
+      m.words.addInstruction(SpvOpStore, resultId, branchResult)
+
+    # False branch
+    m.words.addInstruction(SpvOpLabel, falseId)
+    if not isLastBranch:
+      m.words.addInstruction(SpvOpBranch, mergeId) 
+      m.genIfRecursive(n, index + 1, resultId)
+
+    m.words.addInstruction(SpvOpLabel, mergeId)
+
+  # Else branch
+  else:
+    let branchResult = m.genNode(n[index][0], isExpression)
+    if isExpression:
+      m.words.addInstruction(SpvOpStore, resultId, branchResult)
+
+proc genIf(m: SpirvModule; n: PNode; load: bool): SpirvId =
+  var
+    resultId: SpirvId
+    resultType: SpirvId
+
+  # If this is an expression, store the branch result in a temporary variable
+  if n.kind == nkIfExpr:
+    resultId = m.generateId()
+    resultType = m.genType(n.typ)
+    m.words.addInstruction(SpvOpVariable, m.genPointerType(resultType, SpvStorageClassFunction), resultId, SpvStorageClassFunction.uint32)
+
+  # Generate branches, recursively creating structured control-flow blocks
+  m.genIfRecursive(n, 0, resultId)
+
+  # Load and return the temporary variable's value
+  if n.kind == nkIfExpr:
+    result = m.generateId()
+    m.words.addInstruction(SpvOpLoad, resultType, result, resultId)
+
+proc genBlock(m: SpirvModule; n: PNode; load: bool): SpirvId =
+  discard
+  # result = m.genNode(n[1], load)
+  # m.words.addInstruction(SpvOpLabel, )
+  # return result
+
+proc genWhile(m: SpirvModule; n: PNode): SpirvId =
+  let
+    headerId = m.generateId()
+    bodyId = m.generateId()
+    continueId = m.generateId()
+    mergeId = m.generateId()
+
+  # Header block and loop condition
+  m.words.addInstruction(SpvOpLabel, headerId) # TODO: This should be the surrounding blocks id
+  m.words.addInstruction(SpvOpLoopMerge, mergeId, continueId, SpvLoopControlMaskNone.uint32)
+  m.words.addInstruction(SpvOpBranchConditional, m.genNode(n[0], true), bodyId, mergeId)
+
+  # Loop body
+  m.words.addInstruction(SpvOpLabel, bodyId)
+  discard m.genNode(n[1])
+
+  # Continue target and back-edge block
+  m.words.addInstruction(SpvOpLabel, continueId)
+  m.words.addInstruction(SpvOpBranch, headerId)
+
+  # Merge block
+  m.words.addInstruction(SpvOpLabel, mergeId)
+
+proc genNestedBreak(m: SpirvModule; blockSym: PSym; depth: int): SpirvId =
+  discard
+  # # If this block has a break path to the target block, reuse it
+  # let b = m.currentBlocks[^(depth + 1)]
+  # if blockSym.id in b.breakTargets:
+  #   return b.breakTargets[blockSym.id]
+
+  # # Otherwise generate an id for the target label.
+  # # The label will be emitted when the target block gets finished up.
+  # let
+  #   targetId = m.generateId()
+  #   parent
+  # b.breakTargets.add(blockSym)
+  # m.genNestedBreak(blockSym, depth + 1)
+  # for b in countdown(m.currentBlocks.high, 0):
+  #   var breakTarget = breakTargets
+  #   if blockSym.id in b.breakTargets
+
+proc genBreak(m: SpirvModule; n: PNode): SpirvId =
+  let targetId = m.genNestedBreak(n[0].sym, 0)
+  m.words.addInstruction(SpvOpBranch, targetId)
+
+proc genSons(m: SpirvModule; n: PNode, load: bool = false): SpirvId =
+  for i in 0 ..< n.len - 1:
+    discard m.genNode(n[i], false)
+
+  # The result of a statement list is the value of the last statement (if it is an expression statement)
+  if n.len > 0:
+    return m.genNode(n.lastSon, load)
 
 proc genNode(m: SpirvModule; n: PNode, load: bool = false): SpirvId =
 
@@ -618,20 +778,29 @@ proc genNode(m: SpirvModule; n: PNode, load: bool = false): SpirvId =
       return m.genNode(n[0])
 
     of nkSym:
-      if m.variables.contains(n.sym.id):
+      var variableId: SpirvId
+      if n.sym.kind == skResult:
+        variableId = m.currentFunction.resultVariable.id
+
+      elif n.sym.kind == skParam:
+        variableId = m.parameters[n.sym.id]
+
+      elif m.variables.contains(n.sym.id):
         let variable = m.variables[n.sym.id]
+        variableId = variable.id
         m.currentFunction.usedVariables.incl(variable)
 
+      if variableId != 0:
         if load:
           result = m.generateId()
           let resultType = m.genType(n.typ)
-          m.words.addInstruction(SpvOpLoad, resultType, result, variable.id)
+          m.words.addInstruction(SpvOpLoad, resultType, result, variableId)
         else:
-          return variable.id
+          return variableId
       else:
-        discard # TODO: Error, unknown symbol
+        internalError(m.config, "Unknown symbol " & $n.sym.name.s)
 
-    of nkAsgn:
+    of nkAsgn, nkFastAsgn:
       m.words.addInstruction(SpvOpStore, m.genNode(n[0]), m.genNode(n[1], true))
 
     of nkDotExpr:
@@ -647,6 +816,16 @@ proc genNode(m: SpirvModule; n: PNode, load: bool = false): SpirvId =
       m.words.addInstruction(SpvOpAccessChain, m.genPointerType(resultType, variable.storageClass), temp, variable.id,
         m.genConstant(m.genType(getSysType(m.g.graph, unknownLineInfo(), tyUint32)), n[1].sym.position.uint32))
       m.words.addInstruction(SpvOpLoad, resultType, result, temp)
+
+    of nkReturnStmt:
+      if n.len > 0 and n[0].kind == nkEmpty:
+        m.words.addInstruction(SpvOpReturnValue, m.genNode(n[0], true))
+      elif m.currentFunction.resultVariable != nil:
+        var temp = m.generateId()
+        m.words.addInstruction(SpvOpLoad, m.currentFunction.typ.returnType, temp, m.currentFunction.resultVariable.id)
+        m.words.addInstruction(SpvOpReturnValue, temp)
+      else:
+        m.words.addInstruction(SpvOpReturn)
 
     of nkCallKinds:
 
@@ -679,7 +858,18 @@ proc genNode(m: SpirvModule; n: PNode, load: bool = false): SpirvId =
         m.words.addInstruction(SpvOpLoad, resultType, result, temp)
 
       elif sfImportc notin n[0].sym.flags:
-        internalError(m.config, "Not implemented: User defined functions") # TODO: Handle user functions
+        let function = m.genFunction(n[0].sym)
+        var args = newSeq[SpirvId](n.len - 1)
+        for i in 1 ..< n.len:
+          let
+            valueId = m.genNode(n[i])
+            varId = m.generateId()
+          m.words.addInstruction(SpvOpVariable, m.genPointerType(m.genType(n[i].typ), SpvStorageClassFunction) , varId, SpvStorageClassFunction.uint32)
+          m.words.addInstruction(SpvOpStore, varId, m.genNode(n[i], true))
+          args[i - 1] = varId
+
+        result = m.generateId()
+        m.words.addInstruction(SpvOpFunctionCall, @[function.typ.returnType, result, function.id] & args)
 
       else:
         # TODO: Build lookup
@@ -689,7 +879,6 @@ proc genNode(m: SpirvModule; n: PNode, load: bool = false): SpirvId =
 
         internalError(m.config, "Unhandled SPIR-V intrinsic " & $n[0].sym.loc.r)
 
-    #of nkIdentDefs: discard m.genIdentDefs(n)
     of nkProcDef, nkFuncDef, nkMethodDef, nkIteratorDef, nkConverterDef: #m.genProcDef(n)
 
       let s = n.sons[namePos].sym
@@ -702,17 +891,13 @@ proc genNode(m: SpirvModule; n: PNode, load: bool = false): SpirvId =
         if pragma.kind == nkExprColonExpr and
            pragma[0].kind == nkSym and
            pragma[0].sym.name.s.normalize() == "stage":
-          let executionModel =
-            case pragma[1].ident.s.normalize():
-            of "vertex": SpvExecutionModelVertex
-            of "fragment": SpvExecutionModelFragment
-            of "geometry": SpvExecutionModelGeometry
-            of "tessellationcontrol":  SpvExecutionModelTessellationControl
-            of "tessellationevaluation": SpvExecutionModelTessellationEvaluation
-            of "compute": SpvExecutionModelGLCompute
-            else: raise newException(ValueError, "Unsupported value")
-          
-          executionModels.incl(executionModel)
+
+          block found:
+            for executionModel in SpvExecutionModel:
+              if ($executionModel).normalize().startsWith(("SpvExecutionModel" & pragma[1].ident.s).normalize()):
+                executionModels.incl(executionModel)
+                break found
+            internalError(m.g.config, pragma[1].info, "Unhandled value: " & $pragma[1])
       
       if executionModels != {}:
         let function = m.genFunction(s)
@@ -722,8 +907,13 @@ proc genNode(m: SpirvModule; n: PNode, load: bool = false): SpirvId =
     of nkVarSection, nkLetSection, nkConstSection: #m.genSons(n)
       for child in n.sons:
         discard m.genIdentDefs(child)
-      discard
-    of nkStmtList: m.genSons(n)
+
+    of nkBlockStmt: return m.genBlock(n, load)
+
+    of nkStmtList:
+      return m.genSons(n, load)
+
+    of nkIfStmt, nkIfExpr: return m.genIf(n, load)
 
     else: discard # internalError(n.info, "Unhandled node: " & $n)
 
