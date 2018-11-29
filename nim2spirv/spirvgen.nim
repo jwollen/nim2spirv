@@ -487,11 +487,12 @@ proc genIdentDefs(m: SpirvModule; n: PNode): SpirvVariable =
           of "descriptorset": m.decorationWords.addInstruction(SpvOpDecorate, result.id, SpvDecorationDescriptorSet.uint32, pragma[1].intVal.uint32)
           of "binding": m.decorationWords.addInstruction(SpvOpDecorate, result.id, SpvDecorationBinding.uint32, pragma[1].intVal.uint32)
           of "builtin":
-            var builtIn: SpvBuiltIn
-            case pragma[1].ident.s.normalize():
-              of "position": builtIn = SpvBuiltInPosition 
-              else: discard
-            m.decorationWords.addInstruction(SpvOpDecorate, result.id, SpvDecorationBuiltIn.uint32, builtIn.uint32)
+            block found:
+              for builtIn in SpvBuiltIn:
+                if ($builtIn).normalize().startsWith(("SpvBuiltIn" & pragma[1].ident.s).normalize()):
+                  m.decorationWords.addInstruction(SpvOpDecorate, result.id, SpvDecorationBuiltIn.uint32, builtIn.uint32)
+                  break found
+              internalError(m.g.config, pragma[1].info, "Unhandled value: " & $pragma[1])
           else: discard
       elif pragma.kind == nkSym:
         case pragma.sym.name.s:
@@ -890,26 +891,13 @@ proc genNode(m: SpirvModule; n: PNode, load: bool = false): SpirvId =
         if pragma.kind == nkExprColonExpr and
            pragma[0].kind == nkSym and
            pragma[0].sym.name.s.normalize() == "stage":
-          let executionModel =
-            case pragma[1].ident.s.normalize():
-            of "vertex": SpvExecutionModelVertex
-            of "fragment": SpvExecutionModelFragment
-            of "geometry": SpvExecutionModelGeometry
-            of "tessellationcontrol":  SpvExecutionModelTessellationControl
-            of "tessellationevaluation": SpvExecutionModelTessellationEvaluation
-            of "compute": SpvExecutionModelGLCompute
-            of "kernel": SpvExecutionModelKernel
-            of "task": SpvExecutionModelTaskNV
-            of "mesh": SpvExecutionModelMeshNV
-            of "raygeneration": SpvExecutionModelRayGenerationNVX
-            of "intersection": SpvExecutionModelIntersectionNVX
-            of "anyhit": SpvExecutionModelAnyHitNVX
-            of "closesthit": SpvExecutionModelClosestHitNVX
-            of "miss": SpvExecutionModelMissNVX
-            of "callable": SpvExecutionModelCallableNVX
-            else: raise newException(ValueError, "Unsupported value")
-          
-          executionModels.incl(executionModel)
+
+          block found:
+            for executionModel in SpvExecutionModel:
+              if ($executionModel).normalize().startsWith(("SpvExecutionModel" & pragma[1].ident.s).normalize()):
+                executionModels.incl(executionModel)
+                break found
+            internalError(m.g.config, pragma[1].info, "Unhandled value: " & $pragma[1])
       
       if executionModels != {}:
         let function = m.genFunction(s)
