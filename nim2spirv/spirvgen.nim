@@ -734,22 +734,22 @@ proc genWhile(m: SpirvModule; n: PNode): SpirvId =
   m.words.addInstruction(SpvOpLabel, mergeId)
 
 proc genNestedBreak(m: SpirvModule; blockSym: PSym; depth: int): SpirvId =
+  discard
+  # # If this block has a break path to the target block, reuse it
+  # let b = m.currentBlocks[^(depth + 1)]
+  # if blockSym.id in b.breakTargets:
+  #   return b.breakTargets[blockSym.id]
 
-  # If this block has a break path to the target block, reuse it
-  let b = m.currentBlocks[^(depth + 1)]
-  if blockSym.id in b.breakTargets:
-    return b.breakTargets[blockSym.id]
-
-  # Otherwise generate an id for the target label.
-  # The label will be emitted when the target block gets finished up.
-  let
-    targetId = m.generateId()
-    parent
-  b.breakTargets.add(blockSym)
-  m.genNestedBreak(blockSym, depth + 1)
-  for b in countdown(m.currentBlocks.high, 0):
-    var breakTarget = breakTargets
-    if blockSym.id in b.breakTargets
+  # # Otherwise generate an id for the target label.
+  # # The label will be emitted when the target block gets finished up.
+  # let
+  #   targetId = m.generateId()
+  #   parent
+  # b.breakTargets.add(blockSym)
+  # m.genNestedBreak(blockSym, depth + 1)
+  # for b in countdown(m.currentBlocks.high, 0):
+  #   var breakTarget = breakTargets
+  #   if blockSym.id in b.breakTargets
 
 proc genBreak(m: SpirvModule; n: PNode): SpirvId =
   let targetId = m.genNestedBreak(n[0].sym, 0)
