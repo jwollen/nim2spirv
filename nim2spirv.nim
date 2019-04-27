@@ -6,7 +6,7 @@ import ../compiler/[
   platform, rod, passaux, idgen, extccomp, scriptconfig,
   cmdlinehelper, pathutils]
 
-import nim2spirv/[spirvgen, spirvSemantics]
+import src/[spirvgen, spirvSemantics]
 
 proc semanticPasses(graph: ModuleGraph) =
   registerPass(graph, verbosePass)

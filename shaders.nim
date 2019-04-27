@@ -4,31 +4,49 @@ import std/[macros, strutils]
 
 type
   ShaderStage* = enum
-    Vertex
-    TessellationControl
-    TessellationEvaluation
-    Geometry
-    Fragment
-    Compute
+    Vertex = 0
+    TessellationControl = 1
+    TessellationEvaluation = 2
+    Geometry = 3
+    Fragment = 4
+    GLCompute = 5
 
     # OpenCL
-    Kernel
+    Kernel = 6
 
     # Turing stages
-    Task
-    Mesh
-    RayGeneration
-    Intersection
-    AnyHit
-    ClosestHit
-    Miss
-    Callable
+    Task = 5267
+    Mesh = 5268
+    RayGeneration = 5313
+    Intersection = 5314
+    AnyHit = 5315
+    ClosestHit = 5316
+    Miss = 5317
+    Callable = 5318
 
   BuiltIn* = enum
-    Position
-    VertexId
-    InstanceId
-    PrimitiveId
+    Position = 0
+    VertexId = 5
+    InstanceId = 6
+    PrimitiveId = 7
+
+    NumWorkgroups = 24
+    WorkgroupSize = 25
+    WorkgroupId = 26
+    LocalInvocationId = 27
+    GlobalInvocationId = 28
+    LocalInvocationIndex = 29
+
+    SubgroupSize = 36
+    NumSubgroups = 38
+    SubgroupId = 40
+    SubgroupLocalInvocationId = 41
+
+    SubgroupEqMask = 4416
+    SubgroupGeMask = 4417
+    SubgroupGtMask = 4418
+    SubgroupLeMask = 4419
+    SubgroupLtMask = 4420
 
   float16* {.importc: "float16".} = object
 
@@ -56,7 +74,8 @@ type
     Image3D
     Cube
     Rect
-    SubPass
+    Buffer
+    SubpassData
     
   ArrayKind* {.pure.} = enum
     NonArray
@@ -72,7 +91,9 @@ type
     Storage
 
   Format* {.pure.} = enum
-    Unknown
+    Unknown = 0
+    R32f = 3
+    R16f = 9
 
   AccessQualifier* {.pure.} = enum
     ReadOnly
@@ -93,11 +114,31 @@ type
     MultisampleKind.SingleSample, SampleKind.Sampled,
     Format.Unknown, AccessQualifier.ReadOnly]
 
+  AddressingMode* {.pure.} = enum
+    None
+    ClampToEdge
+    Clamp
+    Repeat
+    RepeatMirrored
+
+  FilterMode* {.pure.} = enum
+    Nearest
+    Linear
+
   Sampler* {.importc.} = object
 
   SampledImage* {.importc.} [T: Image] = object
 
+proc coordType(T: type Image): type =
+  var count = 1
+  case T.dimension:
+    of Image1D, Buffer: count = 1
+    of Image2D, Rect, SubpassData: count = 2
+
 proc sampledImage*[T: Image](image: T; sampler: Sampler): SampledImage[T] {.importc: "OpSampledImage".}
+proc image*[T: Image](image: SampledImage[T]): T {.importc: "OpImage".}
+
+proc read*(image: Image; Image.coordType): Image.T {.importc: "OpImageRead".}
 
 proc sample*(image: SampledImage; coordinate: Vector): SampledImage.T.T {.importc: "OpImageSampleImplicitLod".}
 proc sample*(image: SampledImage; coordinate: Vector; bias: SomeFloat): SampledImage.T.T {.importc: "OpImageSampleImplicitLod".}
