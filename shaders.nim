@@ -74,7 +74,8 @@ type
     Image3D
     Cube
     Rect
-    SubPass
+    Buffer
+    SubpassData
     
   ArrayKind* {.pure.} = enum
     NonArray
@@ -90,7 +91,9 @@ type
     Storage
 
   Format* {.pure.} = enum
-    Unknown
+    Unknown = 0
+    R32f = 3
+    R16f = 9
 
   AccessQualifier* {.pure.} = enum
     ReadOnly
@@ -111,11 +114,31 @@ type
     MultisampleKind.SingleSample, SampleKind.Sampled,
     Format.Unknown, AccessQualifier.ReadOnly]
 
+  AddressingMode* {.pure.} = enum
+    None
+    ClampToEdge
+    Clamp
+    Repeat
+    RepeatMirrored
+
+  FilterMode* {.pure.} = enum
+    Nearest
+    Linear
+
   Sampler* {.importc.} = object
 
   SampledImage* {.importc.} [T: Image] = object
 
+proc coordType(T: type Image): type =
+  var count = 1
+  case T.dimension:
+    of Image1D, Buffer: count = 1
+    of Image2D, Rect, SubpassData: count = 2
+
 proc sampledImage*[T: Image](image: T; sampler: Sampler): SampledImage[T] {.importc: "OpSampledImage".}
+proc image*[T: Image](image: SampledImage[T]): T {.importc: "OpImage".}
+
+proc read*(image: Image; Image.coordType): Image.T {.importc: "OpImageRead".}
 
 proc sample*(image: SampledImage; coordinate: Vector): SampledImage.T.T {.importc: "OpImageSampleImplicitLod".}
 proc sample*(image: SampledImage; coordinate: Vector; bias: SomeFloat): SampledImage.T.T {.importc: "OpImageSampleImplicitLod".}
