@@ -288,7 +288,7 @@ proc genType(m: SpirvModule; t: PType): SpirvId =
         m.decorationWords.addInstruction(SpvOpDecorate, result, SpvDecorationBlock.uint32)
 
         # TODO: Only when used in uniforms
-        m.decorationWords.addInstruction(SpvOpMemberDecorate, result, i.uint32, SpvDecorationOffset.uint32, member.sym.offset.uint32)
+        m.decorationWords.addInstruction(SpvOpMemberDecorate, result, i.uint32, SpvDecorationOffset.uint32, member.sym.position.uint32)
         if ($member.typ).startsWith("Matrix"):
           # TODO: Handle row major
           m.decorationWords.addInstruction(SpvOpMemberDecorate, result, i.uint32, matrixLayout.uint32)
