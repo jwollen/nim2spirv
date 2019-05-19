@@ -143,15 +143,16 @@ proc addInstruction(stream: var seq[uint32]; opCode: SpvOp; operands: varargs[ui
   stream.add(operands)
 
 proc writeOutput(m: SpirvModule) =
-  let outFile = changeFileExt(completeCFilePath(m.config, m.filename.AbsoluteFile), "spv")
+  if sfMainModule in m.module.flags:
+    let outFile = m.config.prepareToWriteOutput()
 
-  var file: File
-  if file.open(outFile.string, fmWrite):
-    discard file.writeBuffer(addr m.words[0], m.words.len * sizeof(uint32))
-    file.close()
-  else:
-    rawMessage(m.config, errCannotOpenFile, m.filename)
-
+    var file: File
+    if file.open(outFile.string, fmWrite):
+      discard file.writeBuffer(addr m.words[0], m.words.len * sizeof(uint32))
+      file.close()
+    else:
+      rawMessage(m.config, errCannotOpenFile, m.filename)
+      
 proc toWords(text: string): seq[uint32] =
   newSeq(result, (text.len + 1 + 3) div 4)
   for i, c in text:
