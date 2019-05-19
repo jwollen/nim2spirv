@@ -13,8 +13,18 @@ proc semanticPasses(graph: ModuleGraph) =
   registerPass(graph, semPass)
 
 proc commandCompileToSpirv(graph: ModuleGraph) =
-  setTarget(graph.config.target, osStandalone, cpuI386)
-  defineSymbol(graph.config.symbols, "spirv")
+  let conf = graph.config
+
+  if conf.outDir.isEmpty:
+    conf.outDir = conf.projectPath
+  if conf.outFile.isEmpty:
+    conf.outFile = RelativeFile(conf.projectName & ".spv")
+
+  setTarget(conf.target, osStandalone, cpuI386)
+  conf.selectedGC = gcNone
+  defineSymbol(conf.symbols, "nogc")
+
+  defineSymbol(conf.symbols, "spirv")
   semanticPasses(graph)
   registerPass(graph, spirvSemanticPass)
   registerPass(graph, spirvGenPass)
@@ -80,7 +90,7 @@ proc handleCmdLine(cache: IdentCache; conf: ConfigRef) =
   )
   self.initDefinesProg(conf, "nim_compiler")
   if paramCount() == 0:
-    writeCommandLineUsage(conf, conf.helpWritten)
+    writeCommandLineUsage(conf)
     return
 
   self.processCmdLineAndProjectPath(conf)

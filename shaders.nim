@@ -1,4 +1,4 @@
-import std/[macros, strutils]
+import std/macros
 
 {.experimental: "dotOperators".}
 
@@ -100,14 +100,14 @@ type
     WriteOnly
     ReadWrite
 
-  Image* {.importc.} [T;
+  Image* [T;
     dim: static[Dimension];
     depth: static[DepthKind];
     arrayed: static[ArrayKind];
     ms: static[MultisampleKind];
     sampled: static[SampleKind];
     format: static[Format];
-    access: static[AccessQualifier]] = object
+    access: static[AccessQualifier]] {.importc.} = object
 
   Image2D* = Image[void, Dimension.Image2D,
     DepthKind.Unspecified, ArrayKind.NonArray,
@@ -127,18 +127,19 @@ type
 
   Sampler* {.importc.} = object
 
-  SampledImage* {.importc.} [T: Image] = object
+  SampledImage* [T: Image] {.importc.} = object
 
-proc coordType(T: type Image): type =
-  var count = 1
-  case T.dimension:
-    of Image1D, Buffer: count = 1
-    of Image2D, Rect, SubpassData: count = 2
+# template coordType[X: Image](_: typedesc[X]): untyped =
+#   int
+#   # var count = 1
+#   # case T.dimension:
+#   #   of Image1D, Buffer: count = 1
+#   #   of Image2D, Rect, SubpassData: count = 2
 
 proc sampledImage*[T: Image](image: T; sampler: Sampler): SampledImage[T] {.importc: "OpSampledImage".}
 proc image*[T: Image](image: SampledImage[T]): T {.importc: "OpImage".}
 
-proc read*(image: Image; Image.coordType): Image.T {.importc: "OpImageRead".}
+proc read*(image: Image; coordinate: Vector): Image.T {.importc: "OpImageRead".}
 
 proc sample*(image: SampledImage; coordinate: Vector): SampledImage.T.T {.importc: "OpImageSampleImplicitLod".}
 proc sample*(image: SampledImage; coordinate: Vector; bias: SomeFloat): SampledImage.T.T {.importc: "OpImageSampleImplicitLod".}

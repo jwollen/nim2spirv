@@ -20,6 +20,7 @@ proc dfa*(g: ModuleGraph; owner: PSym; n: PNode) =
     of fork, goto:
       let d = i+code[i].dest
       backrefs.add(d, i)
+    else: discard
 
   var w = @[0]
   var maxIters = 50
@@ -86,6 +87,7 @@ proc dfa*(g: ModuleGraph; owner: PSym; n: PNode) =
         if not d[pc].containsOrIncl(code[pc].sym.id):
           someChange = true
         inc pc
+      else: discard
 
   when true: #defined(useDfa) and defined(debugDfa):
     var all = initIntSet()

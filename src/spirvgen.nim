@@ -455,7 +455,7 @@ proc genFunction(m: SpirvModule; s: PSym): SpirvFunction =
   let previousFunction = m.currentFunction
   m.currentFunction = result
 
-  m.g.graph.dfa(s, body)
+  #m.g.graph.dfa(s, body)
 
   var returnValue = m.genNode(body, hasResult)
   m.currentFunction = previousFunction
