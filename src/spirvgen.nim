@@ -675,7 +675,7 @@ proc genIfRecursive(m: SpirvModule; n: PNode; index: int; resultId: SpirvId) =
     let
       mergeId = m.generateId()
       trueId = m.generateId()
-      falseId = m.generateId()
+      falseId = if isLastBranch: mergeId else: m.generateId()
       
     # TODO: Branch weights? Likely/unlikely?
     let condition = m.genNode(n[index][0], true)
@@ -690,8 +690,8 @@ proc genIfRecursive(m: SpirvModule; n: PNode; index: int; resultId: SpirvId) =
     m.words.addInstruction(SpvOpBranch, mergeId) 
 
     # False branch
-    m.words.addInstruction(SpvOpLabel, falseId)
     if not isLastBranch:
+      m.words.addInstruction(SpvOpLabel, falseId)
       m.genIfRecursive(n, index + 1, resultId)
     m.words.addInstruction(SpvOpBranch, mergeId) 
 
