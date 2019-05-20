@@ -735,19 +735,23 @@ proc genWhile(m: SpirvModule; n: PNode): SpirvId =
     mergeId = m.generateId()
 
   # Header block and loop condition
+  m.words.addInstruction(SpvOpBranch, headerId) # The previous block must end in a branch instruction
   m.words.addInstruction(SpvOpLabel, headerId) # TODO: This should be the surrounding blocks id
+  
+  let condition = m.genNode(n[0], true)
   m.words.addInstruction(SpvOpLoopMerge, mergeId, continueId, SpvLoopControlMaskNone.uint32)
-  m.words.addInstruction(SpvOpBranchConditional, m.genNode(n[0], true), bodyId, mergeId)
+  m.words.addInstruction(SpvOpBranchConditional, condition, bodyId, mergeId)
 
   # Loop body
   m.words.addInstruction(SpvOpLabel, bodyId)
   discard m.genNode(n[1])
 
   # Continue target and back-edge block
+  m.words.addInstruction(SpvOpBranch, continueId)
   m.words.addInstruction(SpvOpLabel, continueId)
-  m.words.addInstruction(SpvOpBranch, headerId)
 
   # Merge block
+  m.words.addInstruction(SpvOpBranch, headerId)
   m.words.addInstruction(SpvOpLabel, mergeId)
 
 proc genNestedBreak(m: SpirvModule; blockSym: PSym; depth: int): SpirvId =
