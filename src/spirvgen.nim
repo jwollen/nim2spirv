@@ -666,7 +666,7 @@ proc genMagic(m: SpirvModule; n: PNode): SpirvId =
 
   m.genIntrinsic(op, n)
 
-proc genIfRecursive(m: SpirvModule; n: PNode; index: int; resultId: SpirvId) =
+proc genIfRecursive(m: SpirvModule; n: PNode; index: int): SpirvId =
 
   let isExpression = n.kind == nkIfExpr
   if n[index].kind in { nkElifBranch, nkElifExpr }:
@@ -684,44 +684,38 @@ proc genIfRecursive(m: SpirvModule; n: PNode; index: int; resultId: SpirvId) =
 
     # True branch
     m.words.addInstruction(SpvOpLabel, trueId)
-    let branchResult = m.genNode(n[index][1], isExpression)
+    let trueResult = m.genNode(n[index][1], isExpression)
+    var trueParent: SpirvId
     if isExpression:
-      m.words.addInstruction(SpvOpStore, resultId, branchResult)
+      # We generate a dummy block to serve as parent to the phi. Otherwise we would have to also return the last blockId form genNode.
+      trueParent = m.generateId()
+      m.words.addInstruction(SpvOpBranch, trueParent)
+      m.words.addInstruction(SpvOpLabel, trueParent)
     m.words.addInstruction(SpvOpBranch, mergeId) 
 
     # False branch
+    var falseResult, falseParent: SpirvId
     if not isLastBranch:
       m.words.addInstruction(SpvOpLabel, falseId)
-      m.genIfRecursive(n, index + 1, resultId)
+      falseResult = m.genIfRecursive(n, index + 1)
+      if isExpression:
+        falseParent = m.generateId()
+        m.words.addInstruction(SpvOpBranch, falseParent)
+        m.words.addInstruction(SpvOpLabel, falseParent)
     m.words.addInstruction(SpvOpBranch, mergeId) 
 
+    # Merge block. If this is an expression, create a phi with the branch results
     m.words.addInstruction(SpvOpLabel, mergeId)
+    if isExpression:
+      result = m.generateId()
+      m.words.addInstruction(SpvOpPhi, m.genType(n.typ), result, trueResult, trueParent, falseResult, falseParent)
 
   # Else branch
   else:
-    let branchResult = m.genNode(n[index][0], isExpression)
-    if isExpression:
-      m.words.addInstruction(SpvOpStore, resultId, branchResult)
+    return m.genNode(n[index][0], isExpression)
 
 proc genIf(m: SpirvModule; n: PNode; load: bool): SpirvId =
-  var
-    resultId: SpirvId
-    resultType: SpirvId
-
-  # If this is an expression, store the branch result in a temporary variable
-  # TODO: Use OpPhi
-  if n.kind == nkIfExpr:
-    resultId = m.generateId()
-    resultType = m.genType(n.typ)
-    m.words.addInstruction(SpvOpVariable, m.genPointerType(resultType, SpvStorageClassFunction), resultId, SpvStorageClassFunction.uint32)
-
-  # Generate branches, recursively creating structured control-flow blocks
-  m.genIfRecursive(n, 0, resultId)
-
-  # Load and return the temporary variable's value
-  if n.kind == nkIfExpr:
-    result = m.generateId()
-    m.words.addInstruction(SpvOpLoad, resultType, result, resultId)
+  return m.genIfRecursive(n, 0)
 
 proc genBlock(m: SpirvModule; n: PNode; load: bool): SpirvId =
   result = m.genNode(n[1], load)
