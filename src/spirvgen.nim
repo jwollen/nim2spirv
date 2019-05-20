@@ -65,7 +65,8 @@ type
     id: SpirvId
     typ: SpirvFunctionType
     resultVariable: SpirvVariable
-    words: seq[uint32]
+    headerWords: seq[uint32]
+    bodyWords: seq[uint32]
     usedVariables: HashSet[SpirvVariable]
 
   SpirvVariable = ref object
@@ -98,7 +99,7 @@ template config*(m: SpirvModule): ConfigRef = m.g.config
 
 proc words(m: SpirvModule): var seq[uint32] =
   if m.currentFunction != nil:
-    return m.currentFunction.words
+    return m.currentFunction.bodyWords
   else:
     return m.allWords 
 
@@ -429,17 +430,17 @@ proc genFunction(m: SpirvModule; s: PSym): SpirvFunction =
 
   # Header
   let labelId = m.generateId()
-  result.words.addInstruction(SpvOpFunction, result.typ.returnType, result.id, 0'u32, result.typ.id)
+  result.headerWords.addInstruction(SpvOpFunction, result.typ.returnType, result.id, 0'u32, result.typ.id)
 
   for i, paramType in result.typ.argTypes:
     let paramId = m.generateId()
-    result.words.addInstruction(SpvOpFunctionParameter, paramType, paramId)
+    result.headerWords.addInstruction(SpvOpFunctionParameter, paramType, paramId)
     let paramSym = s.typ.n[i + 1].sym
     m.parameters[paramSym.id] = paramId
 
     m.nameWords.addInstruction(SpvOpName, @[paramId] & paramSym.name.s.toWords())
 
-  result.words.addInstruction(SpvOpLabel, labelId)
+  result.headerWords.addInstruction(SpvOpLabel, labelId)
   
   # Create the implicit result variable
   let hasResult = result.typ.returnType != m.genVoidType()
@@ -448,7 +449,7 @@ proc genFunction(m: SpirvModule; s: PSym): SpirvFunction =
     result.resultVariable.id = m.generateId()
     result.resultVariable.storageClass = SpvStorageClassFunction
 
-    result.words.addInstruction(SpvOpVariable, m.genPointerType(result.typ.returnType, SpvStorageClassFunction), result.resultVariable.id, result.resultVariable.storageClass.uint32)
+    result.headerWords.addInstruction(SpvOpVariable, m.genPointerType(result.typ.returnType, SpvStorageClassFunction), result.resultVariable.id, result.resultVariable.storageClass.uint32)
     m.nameWords.addInstruction(SpvOpName, @[result.resultVariable.id] & "result".toWords())
     #m.variables.add(result.symbol.id, result) # Not visible
 
@@ -465,12 +466,12 @@ proc genFunction(m: SpirvModule; s: PSym): SpirvFunction =
   if hasResult:
     if returnValue == 0:
       returnValue = m.generateId()
-      result.words.addInstruction(SpvOpLoad, result.typ.returnType, returnValue, result.resultVariable.id)
-    result.words.addInstruction(SpvOpReturnValue, returnValue)
+      result.bodyWords.addInstruction(SpvOpLoad, result.typ.returnType, returnValue, result.resultVariable.id)
+    result.bodyWords.addInstruction(SpvOpReturnValue, returnValue)
   else:
-    result.words.addInstruction(SpvOpReturn)
+    result.bodyWords.addInstruction(SpvOpReturn)
 
-  result.words.addInstruction(SpvOpFunctionEnd)
+  result.bodyWords.addInstruction(SpvOpFunctionEnd)
 
 proc genIdentDefs(m: SpirvModule; n: PNode): SpirvVariable =
 
@@ -516,6 +517,8 @@ proc genIdentDefs(m: SpirvModule; n: PNode): SpirvVariable =
 
   # TODO: Initializer
   result.words.addInstruction(SpvOpVariable, pointerType, result.id, result.storageClass.uint32)
+  if result.storageClass == SpvStorageClassFunction:
+    m.currentFunction.headerWords.add(result.words)
   
   m.nameWords.addInstruction(SpvOpName, @[result.id] & result.symbol.name.s.toWords())
 
@@ -1021,6 +1024,7 @@ proc myClose(graph: ModuleGraph; b: PPassContext, n: PNode): PNode =
   m.words.add(m.typeWords)
   m.words.add(m.constantWords)
   for id, variable in m.variables:
+    if variable.storageClass != SpvStorageClassFunction:
     m.words.add(variable.words)
     # Undef
     
@@ -1028,7 +1032,8 @@ proc myClose(graph: ModuleGraph; b: PPassContext, n: PNode): PNode =
   # Function definitions
 
   for id, function in m.functions:
-    m.words.add(function.words)
+    m.words.add(function.headerWords)
+    m.words.add(function.bodyWords)
 
     # Blocks
       # Label (opt preceeded by Line)
