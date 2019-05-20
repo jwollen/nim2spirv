@@ -675,24 +675,25 @@ proc genIfRecursive(m: SpirvModule; n: PNode; index: int; resultId: SpirvId) =
     let
       mergeId = m.generateId()
       trueId = m.generateId()
-      falseId = if isLastBranch: mergeId else: m.generateId()
+      falseId = m.generateId()
       
-    # TODO: Flatten/don't flatten
     # TODO: Branch weights? Likely/unlikely?
+    let condition = m.genNode(n[index][0], true)
     m.words.addInstruction(SpvOpSelectionMerge, mergeId, SpvSelectionControlMaskNone.uint32)
-    m.words.addInstruction(SpvOpBranchConditional, m.genNode(n[index][0], true), trueId, falseId)
+    m.words.addInstruction(SpvOpBranchConditional, condition, trueId, falseId)
 
     # True branch
     m.words.addInstruction(SpvOpLabel, trueId)
     let branchResult = m.genNode(n[index][1], isExpression)
     if isExpression:
       m.words.addInstruction(SpvOpStore, resultId, branchResult)
+    m.words.addInstruction(SpvOpBranch, mergeId) 
 
     # False branch
+    m.words.addInstruction(SpvOpLabel, falseId)
     if not isLastBranch:
-      m.words.addInstruction(SpvOpLabel, falseId)
-      m.words.addInstruction(SpvOpBranch, mergeId) 
       m.genIfRecursive(n, index + 1, resultId)
+    m.words.addInstruction(SpvOpBranch, mergeId) 
 
     m.words.addInstruction(SpvOpLabel, mergeId)
 
