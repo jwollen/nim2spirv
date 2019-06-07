@@ -11,8 +11,8 @@ type
     SpvSourceLanguageUnknown = 0
     SpvSourceLanguageESSL = 1
     SpvSourceLanguageGLSL = 2
-    SpvSourceLanguageOpenCLC = 3
-    SpvSourceLanguageOpenCLCPP = 4
+    SpvSourceLanguageOpenCL_C = 3
+    SpvSourceLanguageOpenCL_CPP = 4
     SpvSourceLanguageHLSL = 5
 
   SpvExecutionModel* {.size: sizeof(uint32).} = enum
@@ -25,17 +25,18 @@ type
     SpvExecutionModelKernel = 6
     SpvExecutionModelTaskNV = 5267
     SpvExecutionModelMeshNV = 5268
-    SpvExecutionModelRayGenerationNVX = 5313
-    SpvExecutionModelIntersectionNVX = 5314
-    SpvExecutionModelAnyHitNVX = 5315
-    SpvExecutionModelClosestHitNVX = 5316
-    SpvExecutionModelMissNVX = 5317
-    SpvExecutionModelCallableNVX = 5318
+    SpvExecutionModelRayGenerationNV = 5313
+    SpvExecutionModelIntersectionNV = 5314
+    SpvExecutionModelAnyHitNV = 5315
+    SpvExecutionModelClosestHitNV = 5316
+    SpvExecutionModelMissNV = 5317
+    SpvExecutionModelCallableNV = 5318
 
   SpvAddressingModel* {.size: sizeof(uint32).} = enum
     SpvAddressingModelLogical = 0
     SpvAddressingModelPhysical32 = 1
     SpvAddressingModelPhysical64 = 2
+    SpvAddressingModelPhysicalStorageBuffer64EXT = 5348
 
   SpvMemoryModel* {.size: sizeof(uint32).} = enum
     SpvMemoryModelSimple = 0
@@ -83,6 +84,11 @@ type
     SpvExecutionModeLocalSizeId = 38
     SpvExecutionModeLocalSizeHintId = 39
     SpvExecutionModePostDepthCoverage = 4446
+    SpvExecutionModeDenormPreserve = 4459
+    SpvExecutionModeDenormFlushToZero = 4460
+    SpvExecutionModeSignedZeroInfNanPreserve = 4461
+    SpvExecutionModeRoundingModeRTE = 4462
+    SpvExecutionModeRoundingModeRTZ = 4463
     SpvExecutionModeStencilRefReplacingEXT = 5027
     SpvExecutionModeOutputLinesNV = 5269
     SpvExecutionModeOutputPrimitivesNV = 5270
@@ -104,10 +110,13 @@ type
     SpvStorageClassAtomicCounter = 10
     SpvStorageClassImage = 11
     SpvStorageClassStorageBuffer = 12
-    SpvStorageClassRayPayloadNVX = 5338
-    SpvStorageClassHitAttributeNVX = 5339
-    SpvStorageClassIncomingRayPayloadNVX = 5342
-    SpvStorageClassShaderRecordBufferNVX = 5343
+    SpvStorageClassCallableDataNV = 5328
+    SpvStorageClassIncomingCallableDataNV = 5329
+    SpvStorageClassRayPayloadNV = 5338
+    SpvStorageClassHitAttributeNV = 5339
+    SpvStorageClassIncomingRayPayloadNV = 5342
+    SpvStorageClassShaderRecordBufferNV = 5343
+    SpvStorageClassPhysicalStorageBufferEXT = 5349
 
   SpvDim* {.size: sizeof(uint32).} = enum
     SpvDim1D = 0
@@ -210,7 +219,7 @@ type
     SpvImageChannelDataTypeHalfFloat = 13
     SpvImageChannelDataTypeFloat = 14
     SpvImageChannelDataTypeUnormInt24 = 15
-    SpvImageChannelDataTypeUnormInt1010102 = 16
+    SpvImageChannelDataTypeUnormInt101010_2 = 16
 
   SpvImageOperandsShift* {.size: sizeof(uint32).} = enum
     SpvImageOperandsBiasShift = 0
@@ -328,6 +337,8 @@ type
     SpvDecorationMaxByteOffset = 45
     SpvDecorationAlignmentId = 46
     SpvDecorationMaxByteOffsetId = 47
+    SpvDecorationNoSignedWrap = 4469
+    SpvDecorationNoUnsignedWrap = 4470
     SpvDecorationExplicitInterpAMD = 4999
     SpvDecorationOverrideCoverageNV = 5248
     SpvDecorationPassthroughNV = 5250
@@ -338,6 +349,8 @@ type
     SpvDecorationPerTaskNV = 5273
     SpvDecorationPerVertexNV = 5285
     SpvDecorationNonUniformEXT = 5300
+    SpvDecorationRestrictPointerEXT = 5355
+    SpvDecorationAliasedPointerEXT = 5356
     SpvDecorationHlslCounterBufferGOOGLE = 5634
     SpvDecorationHlslSemanticGOOGLE = 5635
 
@@ -419,19 +432,20 @@ type
     SpvBuiltInBaryCoordNoPerspNV = 5287
     SpvBuiltInFragmentSizeNV = 5292
     SpvBuiltInInvocationsPerPixelNV = 5293
-    SpvBuiltInLaunchIdNVX = 5319
-    SpvBuiltInLaunchSizeNVX = 5320
-    SpvBuiltInWorldRayOriginNVX = 5321
-    SpvBuiltInWorldRayDirectionNVX = 5322
-    SpvBuiltInObjectRayOriginNVX = 5323
-    SpvBuiltInObjectRayDirectionNVX = 5324
-    SpvBuiltInRayTminNVX = 5325
-    SpvBuiltInRayTmaxNVX = 5326
-    SpvBuiltInInstanceCustomIndexNVX = 5327
-    SpvBuiltInObjectToWorldNVX = 5330
-    SpvBuiltInWorldToObjectNVX = 5331
-    SpvBuiltInHitTNVX = 5332
-    SpvBuiltInHitKindNVX = 5333
+    SpvBuiltInLaunchIdNV = 5319
+    SpvBuiltInLaunchSizeNV = 5320
+    SpvBuiltInWorldRayOriginNV = 5321
+    SpvBuiltInWorldRayDirectionNV = 5322
+    SpvBuiltInObjectRayOriginNV = 5323
+    SpvBuiltInObjectRayDirectionNV = 5324
+    SpvBuiltInRayTminNV = 5325
+    SpvBuiltInRayTmaxNV = 5326
+    SpvBuiltInInstanceCustomIndexNV = 5327
+    SpvBuiltInObjectToWorldNV = 5330
+    SpvBuiltInWorldToObjectNV = 5331
+    SpvBuiltInHitTNV = 5332
+    SpvBuiltInHitKindNV = 5333
+    SpvBuiltInIncomingRayFlagsNV = 5351
 
   SpvSelectionControlShift* {.size: sizeof(uint32).} = enum
     SpvSelectionControlFlattenShift = 0
@@ -628,6 +642,11 @@ type
     SpvCapabilityStorageBuffer8BitAccess = 4448
     SpvCapabilityUniformAndStorageBuffer8BitAccess = 4449
     SpvCapabilityStoragePushConstant8 = 4450
+    SpvCapabilityDenormPreserve = 4464
+    SpvCapabilityDenormFlushToZero = 4465
+    SpvCapabilitySignedZeroInfNanPreserve = 4466
+    SpvCapabilityRoundingModeRTE = 4467
+    SpvCapabilityRoundingModeRTZ = 4468
     SpvCapabilityFloat16ImageAMD = 5008
     SpvCapabilityImageGatherBiasLodAMD = 5009
     SpvCapabilityFragmentMaskAMD = 5010
@@ -658,13 +677,15 @@ type
     SpvCapabilityInputAttachmentArrayNonUniformIndexingEXT = 5310
     SpvCapabilityUniformTexelBufferArrayNonUniformIndexingEXT = 5311
     SpvCapabilityStorageTexelBufferArrayNonUniformIndexingEXT = 5312
-    SpvCapabilityRaytracingNVX = 5340
+    SpvCapabilityRayTracingNV = 5340
     SpvCapabilityVulkanMemoryModelKHR = 5345
     SpvCapabilityVulkanMemoryModelDeviceScopeKHR = 5346
+    SpvCapabilityPhysicalStorageBufferAddressesEXT = 5347
     SpvCapabilityComputeDerivativeGroupLinearNV = 5350
     SpvCapabilitySubgroupShuffleINTEL = 5568
     SpvCapabilitySubgroupBufferBlockIOINTEL = 5569
     SpvCapabilitySubgroupImageBlockIOINTEL = 5570
+    SpvCapabilitySubgroupImageMediaBlockIOINTEL = 5579
 
   SpvOp* {.size: sizeof(uint32).} = enum
     SpvOpNop = 0
@@ -1026,11 +1047,12 @@ type
     SpvOpImageSampleFootprintNV = 5283
     SpvOpGroupNonUniformPartitionNV = 5296
     SpvOpWritePackedPrimitiveIndices4x8NV = 5299
-    SpvOpReportIntersectionNVX = 5334
-    SpvOpIgnoreIntersectionNVX = 5335
-    SpvOpTerminateRayNVX = 5336
-    SpvOpTraceNVX = 5337
-    SpvOpTypeAccelerationStructureNVX = 5341
+    SpvOpReportIntersectionNV = 5334
+    SpvOpIgnoreIntersectionNV = 5335
+    SpvOpTerminateRayNV = 5336
+    SpvOpTraceNV = 5337
+    SpvOpTypeAccelerationStructureNV = 5341
+    SpvOpExecuteCallableNV = 5344
     SpvOpSubgroupShuffleINTEL = 5571
     SpvOpSubgroupShuffleDownINTEL = 5572
     SpvOpSubgroupShuffleUpINTEL = 5573
@@ -1039,6 +1061,8 @@ type
     SpvOpSubgroupBlockWriteINTEL = 5576
     SpvOpSubgroupImageBlockReadINTEL = 5577
     SpvOpSubgroupImageBlockWriteINTEL = 5578
+    SpvOpSubgroupImageMediaBlockReadINTEL = 5580
+    SpvOpSubgroupImageMediaBlockWriteINTEL = 5581
     SpvOpDecorateStringGOOGLE = 5632
     SpvOpMemberDecorateStringGOOGLE = 5633
 
